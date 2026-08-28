@@ -10,6 +10,7 @@ export const Colors = {
     textSecondary: "#60646C",
     lightText: "#929292",
     borderColor: "#e0e0e0",
+    lightGrey: "#eeeeee",
   },
 
   dark: {
@@ -21,6 +22,7 @@ export const Colors = {
     textSecondary: "#B0B4BA",
     lightText: "#dbdbdb",
     borderColor: "#e0e0e0",
+    lightGrey: "#eeeeee",
   },
 
   success: "#2AA63E",

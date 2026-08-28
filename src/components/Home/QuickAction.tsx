@@ -1,10 +1,16 @@
 import { useAppTheme } from "@/hooks/useAppTheme";
-import Ionicons from "@react-native-vector-icons/ionicons";
 import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Image,
+  ImageSourcePropType,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 interface QuickActionProps {
-  icon: string;
+  icon: ImageSourcePropType;
   label: string;
   onPress?: () => void;
 }
@@ -20,7 +26,7 @@ export const QuickAction: React.FC<QuickActionProps> = ({
   return (
     <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={onPress}>
       <View style={styles.iconWrap}>
-        <Ionicons name={icon as any} color={colors.textSecondary} size={22} />
+        <Image source={icon} style={styles.icon} resizeMode="contain" />
       </View>
       <Text style={styles.text} numberOfLines={1}>
         {label}
@@ -44,9 +50,13 @@ const createStyles = (
       width: 60,
       height: 60,
       borderRadius: 16,
-      backgroundColor: colors.borderColor,
+      backgroundColor: colors.lightGrey,
       alignItems: "center",
       justifyContent: "center",
+    },
+    icon: {
+      width: 28,
+      height: 28,
     },
     text: {
       textAlign: "center",

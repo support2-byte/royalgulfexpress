@@ -24,6 +24,16 @@ import {
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import AlertsIcon from "@assets/icons/alert.png";
+import DeliveryOptionsIcon from "@assets/icons/delivery.png";
+import GatepassIcon from "@assets/icons/gatepass.png";
+import InvoicesIcon from "@assets/icons/invoice.png";
+import ShipmentsIcon from "@assets/icons/shipments.png";
+import StorageIcon from "@assets/icons/storage.png";
+import SupportIcon from "@assets/icons/support.png";
+import TrackingIcon from "@assets/icons/tracking.png";
+import { LinearGradient } from "expo-linear-gradient";
+
 interface RecentOrder {
   order_id: number | string;
   rgl_booking_number: string;
@@ -174,42 +184,48 @@ const Home = () => {
 
         {latestOrder && (
           <Animated.View entering={FadeInDown.duration(450).delay(120)}>
-            <TouchableOpacity
+            <LinearGradient
               style={styles.shipmentHero}
-              activeOpacity={0.85}
-              onPress={() =>
-                router.navigate({
-                  pathname: "/shipment-details",
-                  params: { bookingNumber: latestOrder.rgl_booking_number },
-                })
-              }
+              colors={[colors.primary, colors.lightPrimary]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
             >
-              <Text style={styles.heroLabel}>Latest Shipment</Text>
-              <View style={styles.heroTopRow}>
-                <Text style={styles.heroBookingId}>
-                  {latestOrder.rgl_booking_number}
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() =>
+                  router.navigate({
+                    pathname: "/shipment-details",
+                    params: { bookingNumber: latestOrder.rgl_booking_number },
+                  })
+                }
+              >
+                <Text style={styles.heroLabel}>Latest Shipment</Text>
+                <View style={styles.heroTopRow}>
+                  <Text style={styles.heroBookingId}>
+                    {latestOrder.rgl_booking_number}
+                  </Text>
+                  <View style={styles.heroStatusPill}>
+                    <Text style={styles.heroStatusText}>
+                      {latestOrder.status}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.heroRoute}>
+                  {latestOrder.loading_place_name}
                 </Text>
-                <View style={styles.heroStatusPill}>
-                  <Text style={styles.heroStatusText}>
-                    {latestOrder.status}
+                <View style={styles.heroBottomRow}>
+                  <Text style={styles.heroRoute}>
+                    {latestOrder.destination_place_name}
+                  </Text>
+                  <Text style={styles.heroEta}>
+                    ETA:{" "}
+                    {latestOrder.eta
+                      ? moment(latestOrder.eta).format("D MMM YYYY")
+                      : "—"}
                   </Text>
                 </View>
-              </View>
-              <Text style={styles.heroRoute}>
-                {latestOrder.loading_place_name}
-              </Text>
-              <View style={styles.heroBottomRow}>
-                <Text style={styles.heroRoute}>
-                  {latestOrder.destination_place_name}
-                </Text>
-                <Text style={styles.heroEta}>
-                  ETA:{" "}
-                  {latestOrder.eta
-                    ? moment(latestOrder.eta).format("D MMM YYYY")
-                    : "—"}
-                </Text>
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            </LinearGradient>
           </Animated.View>
         )}
 
@@ -222,22 +238,22 @@ const Home = () => {
           style={styles.quickActionsRow}
         >
           <QuickAction
-            icon="cube-outline"
+            icon={ShipmentsIcon}
             label="Shipments"
             onPress={() => router.navigate("/shipments")}
           />
           <QuickAction
-            icon="navigate-outline"
+            icon={TrackingIcon}
             label="Tracking"
             onPress={() => router.navigate("/tracking")}
           />
           <QuickAction
-            icon="car-outline"
+            icon={DeliveryOptionsIcon}
             label="Delivery Options"
             onPress={() => router.navigate("/delivery-options")}
           />
           <QuickAction
-            icon="archive-outline"
+            icon={StorageIcon}
             label="Storage"
             onPress={() => router.navigate("/purchase-storage")}
           />
@@ -248,22 +264,22 @@ const Home = () => {
           style={styles.quickActionsRow}
         >
           <QuickAction
-            icon="document-text-outline"
+            icon={GatepassIcon}
             label="Gatepass History"
             onPress={() => router.navigate("/gatepass-history")}
           />
           <QuickAction
-            icon="receipt-outline"
+            icon={InvoicesIcon}
             label="Invoices"
             onPress={() => router.navigate("/invoices")}
           />
           <QuickAction
-            icon="notifications-outline"
+            icon={AlertsIcon}
             label="Alerts"
             onPress={() => router.navigate("/alerts")}
           />
           <QuickAction
-            icon="chatbubble-ellipses-outline"
+            icon={SupportIcon}
             label="Support"
             onPress={() => router.navigate("/support")}
           />
@@ -397,7 +413,6 @@ const createStyles = (
     },
     shipmentHero: {
       padding: 20,
-      backgroundColor: colors.primary,
       borderRadius: 20,
       marginTop: 4,
       marginBottom: 8,

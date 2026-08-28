@@ -70,7 +70,7 @@ const createStyles = (
     card: {
       padding: 14,
       borderRadius: 14,
-      backgroundColor: colors.borderColor,
+      backgroundColor: colors.lightGrey,
       marginBottom: 10,
       shadowColor: colors.text,
       shadowOffset: { width: 0, height: 2 },
