@@ -3,6 +3,7 @@ import Header from "@/components/ui/Header";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import Ionicons from "@react-native-vector-icons/ionicons";
+import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -103,6 +104,16 @@ const ShipmentDetailsScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copiedRef, setCopiedRef] = useState<string | null>(null);
+
+  const handleCopy = useCallback(async (ref: string) => {
+    await Clipboard.setStringAsync(ref);
+    setCopiedRef(ref);
+    setTimeout(
+      () => setCopiedRef((current) => (current === ref ? null : current)),
+      1500,
+    );
+  }, []);
 
   const customerId = user?.customer_id;
 
@@ -340,12 +351,30 @@ const ShipmentDetailsScreen = () => {
                   </Text>
                 </View>
               </View>
-              <Text
-                style={{ ...styles.itemRef, marginBottom: 10 }}
-                numberOfLines={1}
+              <TouchableOpacity
+                style={styles.itemRefRow}
+                onPress={() => handleCopy(item.item_ref)}
+                hitSlop={8}
+                activeOpacity={0.6}
               >
-                {item.item_ref}
-              </Text>
+                <Text
+                  style={{ ...styles.itemRef, flexShrink: 1 }}
+                  numberOfLines={1}
+                >
+                  {item.item_ref}
+                </Text>
+                <Ionicons
+                  name={
+                    copiedRef === item.item_ref ? "checkmark" : "copy-outline"
+                  }
+                  size={13}
+                  color={
+                    copiedRef === item.item_ref
+                      ? colors.primary
+                      : colors.textSecondary
+                  }
+                />
+              </TouchableOpacity>
 
               <View style={styles.itemMetaGrid}>
                 <View style={styles.itemMetaCell}>
@@ -701,6 +730,12 @@ const createStyles = (
       fontFamily: fonts.regular,
       fontSize: fontSize.xs ?? 11,
       color: colors.textSecondary,
+    },
+    itemRefRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginBottom: 10,
     },
     itemChip: {
       borderRadius: 20,

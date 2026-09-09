@@ -3,9 +3,9 @@ import Header from "@/components/ui/Header";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import Ionicons from "@react-native-vector-icons/ionicons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import moment from "moment";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -122,9 +122,11 @@ export default function Invoices() {
     [user?.customer_id],
   );
 
-  useEffect(() => {
-    loadInvoices();
-  }, [loadInvoices]);
+  useFocusEffect(
+    useCallback(() => {
+      loadInvoices();
+    }, [loadInvoices]),
+  );
 
   const handleRefresh = useCallback(() => {
     loadInvoices(true);

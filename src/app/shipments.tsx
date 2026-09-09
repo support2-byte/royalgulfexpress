@@ -7,6 +7,7 @@ import {
 import { useAppContext } from "@/context/AppContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import Ionicons from "@react-native-vector-icons/ionicons";
+import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -57,37 +58,6 @@ interface OrderGroup {
   items: OrderItemLine[];
 }
 
-function groupByOrder(rows: ShipmentRow[]): OrderGroup[] {
-  const map = new Map<number, OrderGroup>();
-
-  for (const row of rows) {
-    if (!map.has(row.order_id)) {
-      map.set(row.order_id, {
-        order_id: row.order_id,
-        booking_number: row.rgl_booking_number,
-        pol: row.loading_place_name ?? "—",
-        pod: row.destination_place_name ?? "—",
-        created_at: row.created_at,
-        items: [],
-      });
-    }
-
-    map.get(row.order_id)!.items.push({
-      order_item_id: row.order_item_id,
-      item_ref: row.item_ref,
-      status: row.status,
-      boxes: Number(row.total_number) || 0,
-      weight: Number(row.weight) || 0,
-      eta: row.eta,
-    });
-  }
-
-  return Array.from(map.values()).sort(
-    (a, b) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-  );
-}
-
 export default function Shipments() {
   const { colors, fontSize, fonts } = useAppTheme();
   const styles = createStyles(colors, fontSize, fonts);
@@ -101,6 +71,16 @@ export default function Shipments() {
 
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [copiedRef, setCopiedRef] = useState<string | null>(null);
+
+  const handleCopy = useCallback(async (ref: string) => {
+    await Clipboard.setStringAsync(ref);
+    setCopiedRef(ref);
+    setTimeout(
+      () => setCopiedRef((current) => (current === ref ? null : current)),
+      1500,
+    );
+  }, []);
 
   const onRefresh = useCallback(
     () => refreshShipments(true),
@@ -211,6 +191,8 @@ export default function Shipments() {
               onToggle={() => toggleExpand(order.order_id)}
               styles={styles}
               colors={colors}
+              copiedRef={copiedRef}
+              onCopy={handleCopy}
             />
           ))
         )}
@@ -233,6 +215,8 @@ function OrderCard({
   onToggle,
   styles,
   colors,
+  copiedRef,
+  onCopy,
 }: {
   order: OrderGroup;
   index: number;
@@ -240,6 +224,8 @@ function OrderCard({
   onToggle: () => void;
   styles: ReturnType<typeof createStyles>;
   colors: ReturnType<typeof useAppTheme>["colors"];
+  copiedRef: string | null;
+  onCopy: (ref: string) => void;
 }) {
   const totalBoxes = order.items.reduce((sum, i) => sum + i.boxes, 0);
   const totalWeight = order.items.reduce((sum, i) => sum + i.weight, 0);
@@ -347,9 +333,29 @@ function OrderCard({
               return (
                 <View key={item.order_item_id} style={styles.itemRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.itemRef} numberOfLines={1}>
-                      {item.item_ref}
-                    </Text>
+                    <TouchableOpacity
+                      style={styles.itemRefRow}
+                      onPress={() => onCopy(item.item_ref)}
+                      hitSlop={8}
+                      activeOpacity={0.6}
+                    >
+                      <Text style={styles.itemRef} numberOfLines={1}>
+                        {item.item_ref}
+                      </Text>
+                      <Ionicons
+                        name={
+                          copiedRef === item.item_ref
+                            ? "checkmark"
+                            : "copy-outline"
+                        }
+                        size={12}
+                        color={
+                          copiedRef === item.item_ref
+                            ? colors.primary
+                            : colors.textSecondary
+                        }
+                      />
+                    </TouchableOpacity>
                     <Text style={styles.itemSub}>
                       {item.boxes} boxes · {item.weight} KG
                     </Text>
@@ -521,6 +527,11 @@ const createStyles = (
       fontFamily: fonts.medium ?? fonts.regular,
       fontSize: fontSize.xs ?? 11,
       color: colors.text,
+    },
+    itemRefRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
     },
     itemSub: {
       fontFamily: fonts.regular,

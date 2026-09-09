@@ -178,8 +178,6 @@ export default function DeliveryScreen() {
     return [...completed, ...pending];
   }, [receiver]);
 
-  const chip = receiver ? STATUS_CHIP[receiver.current_status] : undefined;
-
   return (
     <SafeAreaView style={styles.container}>
       <Header name="Tracking" description="Track your shipment" icon="boat" />
@@ -228,28 +226,6 @@ export default function DeliveryScreen() {
                   </Text>
                   <Text style={styles.summarySub}>{tracking.booking_ref}</Text>
                 </View>
-                {/* <View
-                  style={[
-                    styles.statusChip,
-                    { backgroundColor: chip?.bg ?? colors.background },
-                  ]}
-                >
-                  <Ionicons
-                    name="ellipse"
-                    size={10}
-                    color={chip ? colors[chip.colorKey] : colors.secondary}
-                  />
-                  <Text
-                    style={[
-                      styles.statusChipText,
-                      {
-                        color: chip ? colors[chip.colorKey] : colors.secondary,
-                      },
-                    ]}
-                  >
-                    {receiver.current_status}
-                  </Text>
-                </View> */}
               </View>
 
               <View style={styles.routeRow}>

@@ -4,14 +4,15 @@ import { useAppContext } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import Ionicons from "@react-native-vector-icons/ionicons";
-import { router } from "expo-router";
-import { useMemo, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -21,9 +22,10 @@ import Toast from "react-native-toast-message";
 
 const DAY_OPTIONS = [1, 2, 3, 4, 5, 7, 10, 14];
 const MIN_CARTONS = 1;
-const MAX_CARTONS = 5000;
+const MAX_CARTONS = 50000;
 
 const PurchaseStorage = () => {
+  const { bookingNumber } = useLocalSearchParams<{ bookingNumber?: string }>();
   const { user } = useAuth();
   const { orders, rates } = useAppContext();
   const { colors, fontSize, fonts } = useAppTheme();
@@ -47,6 +49,21 @@ const PurchaseStorage = () => {
     () => orders.find((o) => o.order_id === selectedOrderId) ?? null,
     [orders, selectedOrderId],
   );
+
+  useEffect(() => {
+    if (!bookingNumber || selectedOrderId !== null || orders.length === 0)
+      return;
+
+    const match = orders.find(
+      (o) =>
+        o.booking_number.toLowerCase() === bookingNumber.trim().toLowerCase(),
+    );
+
+    if (match) {
+      setSelectedOrderId(match.order_id);
+      setSelectedItemIds(new Set());
+    }
+  }, [bookingNumber, orders, selectedOrderId]);
 
   const totalCost = useMemo(
     () => days * cartons * COST_PER_CARTON_PER_DAY,
@@ -140,7 +157,7 @@ const PurchaseStorage = () => {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <Header
         name="Storage"
-        description="Need more time? Buy Extra Storage"
+        description="Need time? Buy Storage"
         icon="storefront"
       />
 
@@ -277,7 +294,27 @@ const PurchaseStorage = () => {
                 size={14}
                 color={colors.textSecondary}
               />
-              <Text style={styles.stepperValueText}>{cartons} cartons</Text>
+              <TextInput
+                style={styles.stepperInput}
+                value={String(cartons)}
+                onChangeText={(text) => {
+                  const digitsOnly = text.replace(/[^0-9]/g, "");
+                  if (digitsOnly === "") {
+                    setCartons(MIN_CARTONS);
+                    return;
+                  }
+                  setCartons(Math.min(Number(digitsOnly), MAX_CARTONS));
+                }}
+                onBlur={() =>
+                  setCartons((prev) =>
+                    Math.min(Math.max(prev, MIN_CARTONS), MAX_CARTONS),
+                  )
+                }
+                keyboardType="number-pad"
+                maxLength={4}
+                selectTextOnFocus
+              />
+              <Text style={styles.stepperUnitText}>cartons</Text>
             </View>
             <TouchableOpacity
               style={[
@@ -628,7 +665,15 @@ const createStyles = (
       borderColor: colors.borderColor,
       borderRadius: 10,
     },
-    stepperValueText: {
+    stepperInput: {
+      fontSize: fontSize.sm,
+      fontFamily: fonts.semiBold,
+      color: colors.text,
+      textAlign: "center",
+      minWidth: 40,
+      padding: 0,
+    },
+    stepperUnitText: {
       fontSize: fontSize.sm,
       fontFamily: fonts.semiBold,
       color: colors.text,

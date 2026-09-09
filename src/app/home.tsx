@@ -10,7 +10,6 @@ import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { Ionicons } from "@react-native-vector-icons/ionicons";
 import { router } from "expo-router";
-import moment from "moment";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -24,6 +23,8 @@ import {
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import LatestShipmentCard from "@/components/Home/LatestShipmentCard";
+import TrackingSearchCard from "@/components/Home/TrackingCard";
 import AlertsIcon from "@assets/icons/alert.png";
 import DeliveryOptionsIcon from "@assets/icons/delivery.png";
 import GatepassIcon from "@assets/icons/gatepass.png";
@@ -32,7 +33,6 @@ import ShipmentsIcon from "@assets/icons/shipments.png";
 import StorageIcon from "@assets/icons/storage.png";
 import SupportIcon from "@assets/icons/support.png";
 import TrackingIcon from "@assets/icons/tracking.png";
-import { LinearGradient } from "expo-linear-gradient";
 
 interface RecentOrder {
   order_id: number | string;
@@ -44,6 +44,7 @@ interface RecentOrder {
   eta: string | null;
   status: string;
   created_at: string;
+  item_ref?: string;
 }
 
 interface RecentInvoice {
@@ -161,6 +162,7 @@ const Home = () => {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.bodyContainer}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -182,50 +184,13 @@ const Home = () => {
           </Animated.View>
         )}
 
+        <Animated.View entering={FadeInDown.duration(400).delay(80)}>
+          <TrackingSearchCard />
+        </Animated.View>
+
         {latestOrder && (
           <Animated.View entering={FadeInDown.duration(450).delay(120)}>
-            <LinearGradient
-              style={styles.shipmentHero}
-              colors={[colors.primary, colors.lightPrimary]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-            >
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() =>
-                  router.navigate({
-                    pathname: "/shipment-details",
-                    params: { bookingNumber: latestOrder.rgl_booking_number },
-                  })
-                }
-              >
-                <Text style={styles.heroLabel}>Latest Shipment</Text>
-                <View style={styles.heroTopRow}>
-                  <Text style={styles.heroBookingId}>
-                    {latestOrder.rgl_booking_number}
-                  </Text>
-                  <View style={styles.heroStatusPill}>
-                    <Text style={styles.heroStatusText}>
-                      {latestOrder.status}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.heroRoute}>
-                  {latestOrder.loading_place_name}
-                </Text>
-                <View style={styles.heroBottomRow}>
-                  <Text style={styles.heroRoute}>
-                    {latestOrder.destination_place_name}
-                  </Text>
-                  <Text style={styles.heroEta}>
-                    ETA:{" "}
-                    {latestOrder.eta
-                      ? moment(latestOrder.eta).format("D MMM YYYY")
-                      : "—"}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            </LinearGradient>
+            <LatestShipmentCard order={latestOrder} />
           </Animated.View>
         )}
 
@@ -414,7 +379,7 @@ const createStyles = (
     shipmentHero: {
       padding: 20,
       borderRadius: 20,
-      marginTop: 4,
+      marginTop: 16,
       marginBottom: 8,
     },
     heroLabel: {

@@ -1,11 +1,11 @@
 import { api } from "@/api";
 import Header from "@/components/ui/Header";
 import { useAppTheme } from "@/hooks/useAppTheme";
-// import { createNgeniusOrder, payWithCard } from "@/services/paymentService";
+import { createNgeniusOrder } from "@/lib/paymentService";
 import Ionicons from "@react-native-vector-icons/ionicons";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import moment from "moment";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -127,34 +127,26 @@ export default function PayInvoiceScreen() {
     }
   }, [invoiceId]);
 
-  useEffect(() => {
-    loadInvoice();
-  }, [loadInvoice]);
+  useFocusEffect(
+    useCallback(() => {
+      loadInvoice();
+    }, [loadInvoice]),
+  );
 
   const handlePay = async () => {
     if (!invoice) return;
 
     setPaying(true);
     try {
-      //   const order = await createNgeniusOrder(invoice.id);
-      //   const result = await payWithCard(order);
-      let result: any;
-
-      if (result?.status === "SUCCESS" || result?.state === "PURCHASED") {
-        Alert.alert("Payment Successful", "Your invoice has been paid.", [
-          { text: "OK", onPress: () => router.back() },
-        ]);
-      } else {
-        Alert.alert("Payment Incomplete", "The payment was not completed.");
-      }
+      const { paymentUrl, orderReferenceId } = await createNgeniusOrder(
+        invoice.id,
+      );
+      router.push({
+        pathname: "/pay-webview",
+        params: { paymentUrl, orderReferenceId },
+      });
     } catch (err: any) {
-      if (err?.code === "USER_CANCELLED") {
-      } else {
-        Alert.alert(
-          "Payment Failed",
-          "Something went wrong. Please try again.",
-        );
-      }
+      Alert.alert("Payment Failed", "Something went wrong. Please try again.");
     } finally {
       setPaying(false);
     }

@@ -57,6 +57,7 @@ export default function RootLayout() {
             <Stack.Screen name="pay-invoice" />
             <Stack.Screen name="alerts" />
             <Stack.Screen name="support" />
+            <Stack.Screen name="pay-webview" />
           </Stack>
 
           <Toast position="bottom" swipeable />
