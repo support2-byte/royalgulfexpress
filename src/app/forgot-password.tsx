@@ -1,15 +1,12 @@
+import { tr } from "@/i18n";
 import { api } from "@/api";
+import { Button } from "@/components/ui/Button";
+import { TextField } from "@/components/ui/Form";
+import Header, { useSheetStyle } from "@/components/ui/Header";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 
@@ -21,6 +18,7 @@ const ForgotPassword = () => {
   const [loading, setLoading] = useState<boolean>(false);
 
   const styles = createStyles(colors, fontSize, fonts);
+  const sheet = useSheetStyle();
 
   const handleOTP = async () => {
     setLoading(true);
@@ -45,43 +43,43 @@ const ForgotPassword = () => {
         text1: error?.message,
       });
     } finally {
-      setLoading(true);
+      setLoading(false);
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
+      <Header
+        name="Forgot password"
+        description={tr("We'll email you a one-time code to get back in")}
+        icon="key"
+      />
       <KeyboardAvoidingView
-        style={styles.keyboardView}
+        style={sheet}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={styles.form}>
-          <Text style={styles.title}>Forgot Password</Text>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Email *</Text>
-
-            <TextInput
-              style={styles.input}
-              placeholder="Enter email"
-              placeholderTextColor={colors.textSecondary}
-              value={email}
-              onChangeText={setEmail}
-              inputMode="email"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-
-          <TouchableOpacity
+          <TextField
+            icon="mail-outline"
+            placeholder={tr("Email address")}
+            value={email}
+            onChangeText={setEmail}
+            inputMode="email"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Button
             style={styles.button}
-            activeOpacity={0.8}
+            label={isSent ? "Code sent" : "Send code"}
+            icon={isSent ? "checkmark" : "paper-plane-outline"}
+            loading={loading}
+            disabled={!email.trim()}
             onPress={handleOTP}
-            disabled={loading}
-          >
-            <Text style={styles.buttonText}>SEND OTP</Text>
-          </TouchableOpacity>
+          />
+          {isSent && (
+            <Text style={styles.hint}>{tr("Check your inbox for the code.")}</Text>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -89,76 +87,18 @@ const ForgotPassword = () => {
 };
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
 ) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-
-    keyboardView: {
-      flex: 1,
-      justifyContent: "center",
-      padding: 20,
-    },
-
-    form: {
-      width: "100%",
-      maxWidth: 500,
-      alignSelf: "center",
-    },
-
-    title: {
-      fontSize: fontSize.xxl,
-      fontFamily: fonts.bold,
-      color: colors.text,
-      textAlign: "center",
-      marginBottom: 30,
-    },
-
-    inputContainer: {
-      width: "100%",
-      marginBottom: 14,
-    },
-
-    label: {
-      color: colors.text,
+    container: { flex: 1, backgroundColor: colors.surface },
+    form: { width: "100%", maxWidth: 500, alignSelf: "center", padding: 24, paddingTop: 32 },
+    button: { marginTop: 12 },
+    hint: {
+      fontFamily: fonts.medium,
       fontSize: fontSize.sm,
-      fontFamily: fonts.semiBold,
-      marginLeft: 10,
-      marginBottom: 5,
-    },
-
-    input: {
-      width: "100%",
-      paddingHorizontal: 15,
-      paddingVertical: 10,
-      backgroundColor: colors.background,
-      color: colors.text,
-      borderWidth: 1,
-      borderColor: colors.borderColor,
-      borderRadius: 10,
-      fontSize: fontSize.md,
-      fontFamily: fonts.regular,
-    },
-
-    button: {
-      width: "100%",
-      marginTop: 20,
-      paddingHorizontal: 20,
-      paddingVertical: 10,
-      backgroundColor: colors.primary,
-      borderRadius: 10,
-    },
-
-    buttonText: {
-      color: colors.background,
+      color: colors.textSecondary,
       textAlign: "center",
-      fontSize: fontSize.md,
-      fontFamily: fonts.semiBold,
+      marginTop: 16,
     },
   });
 

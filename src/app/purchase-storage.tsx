@@ -1,35 +1,46 @@
+import { ls, tr, useI18n } from "@/i18n";
 import { api } from "@/api";
-import Header from "@/components/ui/Header";
-import { useAppContext } from "@/context/AppContext";
+import { Button } from "@/components/ui/Button";
+import {
+  FormLabel,
+  OptionRow,
+  SelectField,
+  SheetModal,
+  SummaryRow,
+  TextField,
+} from "@/components/ui/Form";
+import Header, { useSheetStyle } from "@/components/ui/Header";
+import { RateOption, useAppContext } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { itemLabel } from "@/lib/shipmentApi";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { router, useLocalSearchParams } from "expo-router";
+import moment from "moment";
+import { useFeatureGuard } from "@/hooks/useFeatureGuard";
 import { useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Text, TextInput } from "@/components/ui/Text";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 
-const DAY_OPTIONS = [1, 2, 3, 4, 5, 7, 10, 14];
+const DAY_OPTIONS = Array.from({ length: 30 }, (_, i) => i + 1);
 const MIN_CARTONS = 1;
-const MAX_CARTONS = 50000;
+const SIZE_UNITS = ["CBM", "Sq ft", "Sq m"];
+
+const uniq = (values: (string | null)[]) =>
+  Array.from(new Set(values.filter(Boolean))).join(", ");
 
 const PurchaseStorage = () => {
   const { bookingNumber } = useLocalSearchParams<{ bookingNumber?: string }>();
   const { user } = useAuth();
-  const { orders, rates } = useAppContext();
+  const { ordersFor, rates } = useAppContext();
+  useFeatureGuard("storage");
+  const orders = useMemo(() => ordersFor("storage"), [ordersFor]);
   const { colors, fontSize, fonts } = useAppTheme();
   const styles = createStyles(colors, fontSize, fonts);
+  const sheet = useSheetStyle();
 
   const COST_PER_CARTON_PER_DAY = rates.storage_rate;
 
@@ -41,14 +52,55 @@ const PurchaseStorage = () => {
   const [itemPickerOpen, setItemPickerOpen] = useState(false);
 
   const [days, setDays] = useState<number>(5);
-  const [cartons, setCartons] = useState<number>(500);
+  const [cartons, setCartons] = useState<number>(MIN_CARTONS);
   const [dayPickerOpen, setDayPickerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const [storageType, setStorageType] = useState<RateOption | null>(null);
+  const [storageSize, setStorageSize] = useState<RateOption | null>(null);
+  const [requiredFrom, setRequiredFrom] = useState<string | null>(null);
+  const [notes, setNotes] = useState("");
+  const [typePickerOpen, setTypePickerOpen] = useState(false);
+  const [sizePickerOpen, setSizePickerOpen] = useState(false);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+
+  const { lang } = useI18n();
+  const dateOptions = useMemo(
+    () =>
+      Array.from({ length: 14 }, (_, i) => {
+        const d = moment().add(i, "days");
+        return {
+          value: d.format("YYYY-MM-DD"),
+          label: d.format("ddd, D MMM YYYY"),
+        };
+      }),
+    [lang],
+  );
 
   const selectedOrder = useMemo(
     () => orders.find((o) => o.order_id === selectedOrderId) ?? null,
     [orders, selectedOrderId],
   );
+
+  const selectedItems = useMemo(
+    () =>
+      selectedOrder?.items.filter((i) =>
+        selectedItemIds.has(i.order_item_id),
+      ) ?? [],
+    [selectedOrder, selectedItemIds],
+  );
+
+  const maxCartons = useMemo(
+    () => selectedItems.reduce((sum, i) => sum + Number(i.boxes || 0), 0),
+    [selectedItems],
+  );
+
+  const categoryText = uniq(selectedItems.map((i) => i.category));
+  const subcategoryText = uniq(selectedItems.map((i) => i.subcategory));
+
+  useEffect(() => {
+    setCartons(maxCartons > 0 ? maxCartons : MIN_CARTONS);
+  }, [maxCartons]);
 
   useEffect(() => {
     if (!bookingNumber || selectedOrderId !== null || orders.length === 0)
@@ -67,13 +119,19 @@ const PurchaseStorage = () => {
 
   const totalCost = useMemo(
     () => days * cartons * COST_PER_CARTON_PER_DAY,
-    [days, cartons],
+    [days, cartons, COST_PER_CARTON_PER_DAY],
   );
 
-  const isFormValid = selectedOrderId !== null && selectedItemIds.size > 0;
+  const isFormValid =
+    selectedOrderId !== null &&
+    selectedItemIds.size > 0 &&
+    storageSize !== null &&
+    requiredFrom !== null &&
+    cartons >= MIN_CARTONS &&
+    cartons <= maxCartons;
 
   const handleIncrementCartons = () =>
-    setCartons((prev) => Math.min(prev + 10, MAX_CARTONS));
+    setCartons((prev) => Math.min(prev + 10, maxCartons));
 
   const handleDecrementCartons = () =>
     setCartons((prev) => Math.max(prev - 10, MIN_CARTONS));
@@ -90,11 +148,8 @@ const PurchaseStorage = () => {
   };
 
   const toggleItem = (itemId: number) => {
-    setSelectedItemIds((prev) => {
-      const next = new Set(prev);
-      next.has(itemId) ? next.delete(itemId) : next.add(itemId);
-      return next;
-    });
+    setSelectedItemIds(new Set([itemId]));
+    setItemPickerOpen(false);
   };
 
   const handlePurchase = async () => {
@@ -107,6 +162,9 @@ const PurchaseStorage = () => {
         selectedItemIds.has(i.order_item_id),
       );
 
+      const uniq = (values: (string | null)[]) =>
+        Array.from(new Set(values.filter(Boolean))).join(", ");
+
       const response = await api.post(
         `/shipments/purchase-storage/${user.customer_id}`,
         {
@@ -115,7 +173,11 @@ const PurchaseStorage = () => {
           totalCost,
           orderId: selectedOrder.order_id,
           orderItemIds: Array.from(selectedItemIds),
-          selectedShipment: selectedItems.map((i) => i.item_ref),
+          selectedShipment: selectedItems[0].item_ref,
+          sizeValue: Number(storageSize?.key.split("_")[0]),
+          sizeUnit: storageSize?.key.split("_")[1],
+          requiredFrom,
+          notes: notes.trim(),
         },
         {
           validateStatus: () => true,
@@ -126,21 +188,21 @@ const PurchaseStorage = () => {
 
       if (result.success) {
         Toast.show({
-          text1: "Successful",
+          text1: tr("Successful"),
           text2: result.message,
           type: "success",
         });
         router.replace("/home");
       } else {
         Toast.show({
-          text1: "Failed",
+          text1: tr("Failed"),
           text2: result.message,
           type: "error",
         });
       }
     } catch (err: any) {
       Toast.show({
-        text1: "Failed",
+        text1: tr("Failed"),
         text2: err.message,
         type: "error",
       });
@@ -150,691 +212,446 @@ const PurchaseStorage = () => {
       setCartons(500);
       setSelectedOrderId(null);
       setSelectedItemIds(new Set());
+      setStorageType(null);
+      setStorageSize(null);
+      setRequiredFrom(null);
+      setNotes("");
     }
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <Header
         name="Storage"
-        description="Need time? Buy Storage"
+        description={tr("Need more time? Buy extra storage days")}
         icon="storefront"
       />
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.bodyContainer}
-      >
-        <Animated.View
-          entering={FadeInDown.duration(300)}
-          style={styles.infoCard}
+      <View style={sheet}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.bodyContainer}
         >
-          <Ionicons name="alert-circle-outline" size={15} color="#B4690E" />
-          <Text style={styles.infoText}>
-            Storage charges active, 2 days overdue. AED {rates.storage_rate}{" "}
-            charged so far
-          </Text>
-        </Animated.View>
-
-        <Animated.View
-          entering={FadeInDown.duration(300).delay(30)}
-          style={styles.inputContainer}
-        >
-          <Text style={styles.label}>Select Shipment</Text>
-          <TouchableOpacity
-            style={styles.dropdown}
-            activeOpacity={0.7}
-            onPress={() => setOrderPickerOpen(true)}
+          <Animated.View
+            entering={FadeInDown.duration(340)}
+            style={styles.notice}
           >
-            <View style={styles.dropdownLeft}>
-              <Ionicons
-                name="albums-outline"
-                size={16}
-                color={colors.textSecondary}
-              />
-              <Text
+            <View style={styles.noticeIcon}>
+              <Ionicons name="alert-circle-outline" size={18} color="#B4690E" />
+            </View>
+            <Text style={styles.noticeText}>
+              Storage charges active, 2 days overdue. AED {rates.storage_rate}{" "}
+              charged so far
+            </Text>
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.duration(340).delay(40)}>
+            <FormLabel>{tr("Shipment")}</FormLabel>
+            <SelectField
+              icon="albums-outline"
+              value={selectedOrder?.booking_number}
+              placeholder={tr("Select order")}
+              onPress={() => setOrderPickerOpen(true)}
+            />
+            <SelectField
+              icon="cube-outline"
+              value={selectedItems[0] ? itemLabel(selectedItems[0]) : undefined}
+              placeholder={
+                selectedOrder ? "Select item" : "Select an order first"
+              }
+              onPress={() => selectedOrder && setItemPickerOpen(true)}
+              disabled={!selectedOrder}
+            />
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.duration(340).delay(80)}>
+            <FormLabel>{tr("Extra days to buy")}</FormLabel>
+            <SelectField
+              icon="calendar-outline"
+              value={`${days} ${tr(days === 1 ? "day" : "days")}`}
+              placeholder={tr("Choose days")}
+              onPress={() => setDayPickerOpen(true)}
+            />
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.duration(340).delay(120)}>
+            <FormLabel>{tr("Quantity to store")}</FormLabel>
+            <View style={styles.stepperRow}>
+              <TouchableOpacity
                 style={[
-                  styles.dropdownText,
-                  !selectedOrder && { color: colors.lightText },
+                  styles.stepperBtn,
+                  cartons <= MIN_CARTONS && styles.stepperBtnDisabled,
                 ]}
-                numberOfLines={1}
+                activeOpacity={0.7}
+                onPress={handleDecrementCartons}
+                disabled={cartons <= MIN_CARTONS}
               >
-                {selectedOrder ? selectedOrder.booking_number : "Select order"}
-              </Text>
-            </View>
-            <Ionicons
-              name="chevron-down"
-              size={16}
-              color={colors.textSecondary}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.dropdown, { marginTop: 8 }]}
-            activeOpacity={0.7}
-            onPress={() => selectedOrder && setItemPickerOpen(true)}
-            disabled={!selectedOrder}
-          >
-            <View style={styles.dropdownLeft}>
-              <Ionicons
-                name="cube-outline"
-                size={16}
-                color={colors.textSecondary}
-              />
-              <Text
-                style={[
-                  styles.dropdownText,
-                  selectedItemIds.size === 0 && { color: colors.lightText },
-                ]}
-                numberOfLines={1}
-              >
-                {selectedItemIds.size > 0
-                  ? `${selectedItemIds.size} item${selectedItemIds.size !== 1 ? "s" : ""} selected`
-                  : selectedOrder
-                    ? "Select item(s)"
-                    : "Select an order first"}
-              </Text>
-            </View>
-            <Ionicons
-              name="chevron-down"
-              size={16}
-              color={colors.textSecondary}
-            />
-          </TouchableOpacity>
-        </Animated.View>
-
-        <Animated.View
-          entering={FadeInDown.duration(300).delay(60)}
-          style={styles.inputContainer}
-        >
-          <Text style={styles.label}>Choose Extra Days to Buy</Text>
-          <TouchableOpacity
-            style={styles.dropdown}
-            activeOpacity={0.7}
-            onPress={() => setDayPickerOpen(true)}
-          >
-            <View style={styles.dropdownLeft}>
-              <Ionicons
-                name="calendar-outline"
-                size={16}
-                color={colors.textSecondary}
-              />
-              <Text style={styles.dropdownText}>
-                {days} {days === 1 ? "day" : "days"}
-              </Text>
-            </View>
-            <Ionicons
-              name="chevron-down"
-              size={16}
-              color={colors.textSecondary}
-            />
-          </TouchableOpacity>
-        </Animated.View>
-
-        <Animated.View
-          entering={FadeInDown.duration(300).delay(90)}
-          style={styles.inputContainer}
-        >
-          <Text style={styles.label}>Quantity to Store</Text>
-          <View style={styles.stepperRow}>
-            <TouchableOpacity
-              style={[
-                styles.stepperBtn,
-                cartons <= MIN_CARTONS && styles.stepperBtnDisabled,
-              ]}
-              activeOpacity={0.7}
-              onPress={handleDecrementCartons}
-              disabled={cartons <= MIN_CARTONS}
-            >
-              <Ionicons name="remove" size={16} color={colors.text} />
-            </TouchableOpacity>
-            <View style={styles.stepperValueBox}>
-              <Ionicons
-                name="cube-outline"
-                size={14}
-                color={colors.textSecondary}
-              />
-              <TextInput
-                style={styles.stepperInput}
-                value={String(cartons)}
-                onChangeText={(text) => {
-                  const digitsOnly = text.replace(/[^0-9]/g, "");
-                  if (digitsOnly === "") {
-                    setCartons(MIN_CARTONS);
-                    return;
+                <Ionicons name="remove" size={22} color={colors.ink} />
+              </TouchableOpacity>
+              <View style={styles.stepperValueBox}>
+                <TextInput
+                  style={styles.stepperInput}
+                  value={String(cartons)}
+                  onChangeText={(text) => {
+                    const digitsOnly = text.replace(/[^0-9]/g, "");
+                    if (digitsOnly === "") {
+                      setCartons(MIN_CARTONS);
+                      return;
+                    }
+                    setCartons(
+                      Math.min(
+                        Number(digitsOnly),
+                        Math.max(maxCartons, MIN_CARTONS),
+                      ),
+                    );
+                  }}
+                  onBlur={() =>
+                    setCartons((prev) =>
+                      Math.min(
+                        Math.max(prev, MIN_CARTONS),
+                        Math.max(maxCartons, MIN_CARTONS),
+                      ),
+                    )
                   }
-                  setCartons(Math.min(Number(digitsOnly), MAX_CARTONS));
-                }}
-                onBlur={() =>
-                  setCartons((prev) =>
-                    Math.min(Math.max(prev, MIN_CARTONS), MAX_CARTONS),
-                  )
-                }
-                keyboardType="number-pad"
-                maxLength={4}
-                selectTextOnFocus
-              />
-              <Text style={styles.stepperUnitText}>cartons</Text>
+                  keyboardType="number-pad"
+                  maxLength={Math.max(String(maxCartons).length, 1)}
+                  selectTextOnFocus
+                />
+                <Text style={styles.stepperUnitText}>{tr("cartons")}</Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.stepperBtn,
+                  cartons >= maxCartons && styles.stepperBtnDisabled,
+                ]}
+                activeOpacity={0.7}
+                onPress={handleIncrementCartons}
+                disabled={cartons >= maxCartons}
+              >
+                <Ionicons name="add" size={22} color={colors.ink} />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={[
-                styles.stepperBtn,
-                cartons >= MAX_CARTONS && styles.stepperBtnDisabled,
-              ]}
-              activeOpacity={0.7}
-              onPress={handleIncrementCartons}
-              disabled={cartons >= MAX_CARTONS}
-            >
-              <Ionicons name="add" size={16} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
+            <Text style={styles.helperText}>
+              {maxCartons > 0
+                ? tr("Min {min} · Max {max} cartons (item total)", { min: MIN_CARTONS, max: maxCartons })
+                : "Select item(s) to set the quantity"}
+            </Text>
+          </Animated.View>
 
-        <Animated.View
-          entering={FadeInDown.duration(300).delay(120)}
-          style={styles.card}
-        >
-          <View style={styles.cardLabelRow}>
-            <Ionicons
-              name="receipt-outline"
-              size={14}
-              color={colors.secondary}
+          <Animated.View entering={FadeInDown.duration(340).delay(140)}>
+            <FormLabel>{tr("Storage type")}</FormLabel>
+            <SelectField
+              icon="snow-outline"
+              value={storageType?.label}
+              placeholder={tr("Select storage type")}
+              onPress={() => setTypePickerOpen(true)}
             />
-            <Text style={styles.cardLabel}>Order Summary</Text>
-          </View>
 
-          <View style={styles.cardRow}>
-            <Text style={styles.cardTextLeft}>Shipment</Text>
-            <Text style={styles.cardTextRight}>
-              {selectedOrder ? selectedOrder.booking_number : "—"}
-            </Text>
-          </View>
-          <View style={styles.cardRow}>
-            <Text style={styles.cardTextLeft}>Items</Text>
-            <Text style={styles.cardTextRight}>
-              {selectedItemIds.size > 0 ? selectedItemIds.size : "—"}
-            </Text>
-          </View>
-          <View style={styles.cardRow}>
-            <Text style={styles.cardTextLeft}>Cartons</Text>
-            <Text style={styles.cardTextRight}>{cartons}</Text>
-          </View>
-          <View style={styles.cardRow}>
-            <Text style={styles.cardTextLeft}>Days</Text>
-            <Text style={styles.cardTextRight}>
-              {days} {days === 1 ? "day" : "days"}
-            </Text>
-          </View>
-          <View style={styles.cardRow}>
-            <Text style={styles.cardTextLeft}>Cost per day</Text>
-            <Text style={styles.cardTextRight}>
-              AED {COST_PER_CARTON_PER_DAY.toFixed(2)} / carton
-            </Text>
-          </View>
+            <FormLabel>{tr("Storage size")}</FormLabel>
+            <SelectField
+              icon="resize-outline"
+              value={storageSize?.label}
+              placeholder={tr("Select storage size")}
+              onPress={() => setSizePickerOpen(true)}
+            />
 
-          <View style={styles.totalDivider} />
+            <FormLabel>{tr("Required from")}</FormLabel>
+            <SelectField
+              icon="calendar-number-outline"
+              value={
+                requiredFrom
+                  ? dateOptions.find((d) => d.value === requiredFrom)?.label
+                  : undefined
+              }
+              placeholder={tr("Select start date")}
+              onPress={() => setDatePickerOpen(true)}
+            />
 
-          <View style={styles.cardRow}>
-            <Text style={styles.totalLabel}>Total Cost</Text>
-            <Text style={styles.totalValue}>AED {totalCost.toFixed(2)}</Text>
-          </View>
-        </Animated.View>
-      </ScrollView>
+            <FormLabel>{tr("Notes (optional)")}</FormLabel>
+            <TextField
+              icon="document-text-outline"
+              placeholder={tr("Any special instructions")}
+              value={notes}
+              onChangeText={setNotes}
+              maxLength={200}
+              editable={!submitting}
+            />
+          </Animated.View>
 
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[
-            styles.button,
-            (!isFormValid || submitting) && { opacity: 0.5 },
-          ]}
-          activeOpacity={0.85}
-          onPress={handlePurchase}
-          disabled={!isFormValid || submitting}
-        >
-          {submitting ? (
-            <ActivityIndicator size="small" color={colors.background} />
-          ) : (
-            <>
-              <Ionicons
-                name="lock-closed"
-                size={15}
-                color={colors.background}
-              />
-              <Text style={styles.buttonText}>Confirm & Purchase</Text>
-            </>
+          <Animated.View
+            entering={FadeInDown.duration(340).delay(160)}
+            style={styles.summary}
+          >
+            <SummaryRow
+              label="Shipment"
+              value={selectedOrder ? selectedOrder.booking_number : "—"}
+            />
+            <SummaryRow label="Category" value={categoryText || "—"} />
+            <SummaryRow label="Subcategory" value={subcategoryText || "—"} />
+            <SummaryRow label="Cartons" value={String(cartons)} />
+            <SummaryRow
+              label="Days"
+              value={`${days} ${tr(days === 1 ? "day" : "days")}`}
+            />
+            <SummaryRow label="Size" value={storageSize?.label ?? "—"} />
+            <SummaryRow label="Start date" value={requiredFrom ?? "—"} />
+            <SummaryRow
+              label="Rate"
+              value={`AED ${COST_PER_CARTON_PER_DAY.toFixed(2)} / ${tr("carton")} / ${tr("day")}`}
+            />
+            <View style={styles.totalDivider} />
+            <SummaryRow
+              label="Total"
+              value={`AED ${totalCost.toFixed(2)}`}
+              strong
+            />
+            <SummaryRow
+              label="Total (Estimated)"
+              value={`AED ${totalCost.toFixed(2)}`}
+              strong
+            />
+            <Text style={styles.estimateNote}>
+              {tr("* This is an estimated amount only. The final amount will be confirmed once our team assigns the storage type for your shipment. Each type carries its own rate, which will be added to this total.")}
+            </Text>
+          </Animated.View>
+        </ScrollView>
+
+        <View style={styles.footer}>
+          <Button
+            label="Confirm & purchase"
+            icon="lock-closed"
+            variant="accent"
+            loading={submitting}
+            disabled={!isFormValid}
+            onPress={handlePurchase}
+          />
+          {!isFormValid && !submitting && (
+            <Text style={styles.validationHint}>
+              {tr("Select a shipment, item, storage size and start date to continue")}
+            </Text>
           )}
-        </TouchableOpacity>
-        {!isFormValid && !submitting && (
-          <Text style={styles.validationHint}>
-            Select a shipment and item(s) to continue
-          </Text>
-        )}
+        </View>
       </View>
 
-      {/* Day picker */}
-      <Modal
+      <SheetModal
         visible={dayPickerOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setDayPickerOpen(false)}
+        title={tr("Choose extra days")}
+        onClose={() => setDayPickerOpen(false)}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setDayPickerOpen(false)}
-        >
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Choose Extra Days</Text>
-            {DAY_OPTIONS.map((option) => (
-              <TouchableOpacity
-                key={option}
-                style={styles.modalOption}
-                activeOpacity={0.7}
-                onPress={() => handleSelectDays(option)}
-              >
-                <Text
-                  style={[
-                    styles.modalOptionText,
-                    option === days && {
-                      color: colors.primary,
-                      fontFamily: fonts.semiBold,
-                    },
-                  ]}
-                >
-                  {option} {option === 1 ? "day" : "days"}
-                </Text>
-                {option === days && (
-                  <Ionicons
-                    name="checkmark-circle"
-                    size={18}
-                    color={colors.primary}
-                  />
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
+        <ScrollView>
+          {DAY_OPTIONS.map((option) => (
+            <OptionRow
+              key={option}
+              title={`${option} ${tr(option === 1 ? "day" : "days")}`}
+              selected={option === days}
+              onPress={() => handleSelectDays(option)}
+            />
+          ))}
+        </ScrollView>
+      </SheetModal>
 
-      {/* Order picker */}
-      <Modal
+      <SheetModal
         visible={orderPickerOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setOrderPickerOpen(false)}
+        title={tr("Select order")}
+        onClose={() => setOrderPickerOpen(false)}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setOrderPickerOpen(false)}
-        >
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Select Order</Text>
-            <ScrollView style={{ maxHeight: 320 }}>
-              {orders.length === 0 ? (
-                <Text style={styles.modalEmpty}>No shipments available</Text>
-              ) : (
-                orders.map((order) => (
-                  <TouchableOpacity
-                    key={order.order_id}
-                    style={styles.modalOption}
-                    activeOpacity={0.7}
-                    onPress={() => handleSelectOrder(order.order_id)}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.modalOptionText}>
-                        {order.booking_number}
-                      </Text>
-                      <Text style={styles.modalOptionSub} numberOfLines={1}>
-                        {order.pol} → {order.pod} · {order.items.length} item
-                        {order.items.length !== 1 ? "s" : ""}
-                      </Text>
-                    </View>
-                    {selectedOrderId === order.order_id && (
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={18}
-                        color={colors.primary}
-                      />
-                    )}
-                  </TouchableOpacity>
-                ))
-              )}
-            </ScrollView>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+        <ScrollView>
+          {orders.length === 0 ? (
+            <Text style={styles.modalEmpty}>{tr("No shipments available")}</Text>
+          ) : (
+            orders.map((order) => (
+              <OptionRow
+                key={order.order_id}
+                title={order.booking_number}
+                subtitle={`${order.pol} → ${order.pod} · ${tr(order.items.length === 1 ? "{n} item" : "{n} items", { n: order.items.length })}`}
+                selected={selectedOrderId === order.order_id}
+                onPress={() => handleSelectOrder(order.order_id)}
+              />
+            ))
+          )}
+        </ScrollView>
+      </SheetModal>
 
-      {/* Item picker */}
-      <Modal
+      <SheetModal
         visible={itemPickerOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setItemPickerOpen(false)}
+        title={tr("Select item")}
+        onClose={() => setItemPickerOpen(false)}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setItemPickerOpen(false)}
-        >
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Select Item(s)</Text>
-            <ScrollView style={{ maxHeight: 320 }}>
-              {selectedOrder?.items.map((item) => {
-                const checked = selectedItemIds.has(item.order_item_id);
-                return (
-                  <TouchableOpacity
-                    key={item.order_item_id}
-                    style={styles.modalOption}
-                    activeOpacity={0.7}
-                    onPress={() => toggleItem(item.order_item_id)}
-                  >
-                    <View
-                      style={[
-                        styles.checkbox,
-                        checked && styles.checkboxChecked,
-                      ]}
-                    >
-                      {checked && (
-                        <Ionicons
-                          name="checkmark"
-                          size={12}
-                          color={colors.background}
-                        />
-                      )}
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 10 }}>
-                      <Text style={styles.modalOptionText} numberOfLines={1}>
-                        {item.item_ref}
-                      </Text>
-                      <Text style={styles.modalOptionSub}>
-                        {item.boxes} boxes · {item.weight} KG
-                        {item.status ? ` · ${item.status}` : ""}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-            <TouchableOpacity
-              style={styles.modalDoneBtn}
-              onPress={() => setItemPickerOpen(false)}
-            >
-              <Text style={styles.modalDoneBtnText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+        <ScrollView>
+          {selectedOrder?.items.map((item) => (
+            <OptionRow
+              key={item.order_item_id}
+              title={itemLabel(item)}
+              subtitle={`${tr("{n} boxes", { n: item.boxes })} · ${item.weight} kg${item.status ? ` · ${item.status}` : ""}`}
+              selected={selectedItemIds.has(item.order_item_id)}
+              onPress={() => toggleItem(item.order_item_id)}
+            />
+          ))}
+        </ScrollView>
+      </SheetModal>
+      <SheetModal
+        visible={typePickerOpen}
+        title={tr("Select storage type")}
+        onClose={() => setTypePickerOpen(false)}
+      >
+        <ScrollView>
+          {rates.storage_types.map((opt) => (
+            <OptionRow
+              key={opt.key}
+              title={opt.label}
+              subtitle={`AED ${opt.value.toFixed(2)} / ${tr("day")}`}
+              selected={opt.key === storageType?.key}
+              onPress={() => {
+                setStorageType(opt);
+                setTypePickerOpen(false);
+              }}
+            />
+          ))}
+        </ScrollView>
+      </SheetModal>
+
+      <SheetModal
+        visible={sizePickerOpen}
+        title={tr("Select storage size")}
+        onClose={() => setSizePickerOpen(false)}
+      >
+        <ScrollView>
+          {rates.storage_sizes.map((opt) => (
+            <OptionRow
+              key={opt.key}
+              title={opt.label}
+              subtitle={`AED ${opt.value.toFixed(2)} / ${tr("day")}`}
+              selected={opt.key === storageSize?.key}
+              onPress={() => {
+                setStorageSize(opt);
+                setSizePickerOpen(false);
+              }}
+            />
+          ))}
+        </ScrollView>
+      </SheetModal>
+
+      <SheetModal
+        visible={datePickerOpen}
+        title={tr("Required from")}
+        onClose={() => setDatePickerOpen(false)}
+      >
+        <ScrollView>
+          {dateOptions.map((opt) => (
+            <OptionRow
+              key={opt.value}
+              title={opt.label}
+              selected={opt.value === requiredFrom}
+              onPress={() => {
+                setRequiredFrom(opt.value);
+                setDatePickerOpen(false);
+              }}
+            />
+          ))}
+        </ScrollView>
+      </SheetModal>
     </SafeAreaView>
   );
 };
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
 ) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    bodyContainer: {
-      padding: 16,
-      paddingBottom: 16,
-    },
-    infoCard: {
+    container: { flex: 1, backgroundColor: colors.surface },
+    bodyContainer: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 24 },
+    notice: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 8,
-      marginBottom: 14,
-      paddingHorizontal: 12,
-      paddingVertical: 9,
-      backgroundColor: "#FFF3E0",
-      borderRadius: 10,
-      borderLeftWidth: 3,
-      borderColor: "#B4690E",
+      gap: 12,
+      paddingBottom: 4,
     },
-    infoText: {
+    sizeRow: { flexDirection: "row", gap: 8 },
+    noticeIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: "#FEF1E6",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    noticeText: {
       flex: 1,
-      fontSize: fontSize.xs ?? 12,
       fontFamily: fonts.medium,
+      fontSize: fontSize.xs,
+      lineHeight: 17,
       color: "#B4690E",
-    },
-    inputContainer: {
-      width: "100%",
-      marginBottom: 12,
-    },
-    label: {
-      color: colors.text,
-      fontSize: fontSize.xs ?? 11,
-      fontFamily: fonts.semiBold,
-      marginBottom: 6,
-    },
-    dropdown: {
-      width: "100%",
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingHorizontal: 12,
-      paddingVertical: 11,
-      backgroundColor: colors.background,
-      borderWidth: 1,
-      borderColor: colors.borderColor,
-      borderRadius: 10,
-    },
-    dropdownLeft: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 8,
-      flex: 1,
-    },
-    dropdownText: {
-      fontSize: fontSize.sm,
-      fontFamily: fonts.medium ?? fonts.regular,
-      color: colors.text,
     },
     stepperRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 8,
+      justifyContent: "space-between",
+      gap: 12,
     },
     stepperBtn: {
-      width: 38,
-      height: 38,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.borderColor,
+      width: 54,
+      height: 54,
+      borderRadius: 27,
+      backgroundColor: colors.surface,
       alignItems: "center",
       justifyContent: "center",
     },
-    stepperBtnDisabled: {
-      opacity: 0.4,
-    },
-    stepperValueBox: {
-      flex: 1,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 6,
-      paddingVertical: 11,
-      borderWidth: 1,
-      borderColor: colors.borderColor,
-      borderRadius: 10,
-    },
+    stepperBtnDisabled: { opacity: 0.35 },
+    stepperValueBox: { flex: 1, alignItems: "center" },
     stepperInput: {
-      fontSize: fontSize.sm,
-      fontFamily: fonts.semiBold,
-      color: colors.text,
-      textAlign: "center",
-      minWidth: 40,
+      fontFamily: fonts.bold,
+      fontSize: 36,
+      color: colors.ink,
+      letterSpacing: ls(-1),
       padding: 0,
+      textAlign: "center",
+      minWidth: 120,
     },
     stepperUnitText: {
-      fontSize: fontSize.sm,
-      fontFamily: fonts.semiBold,
-      color: colors.text,
-    },
-    card: {
-      backgroundColor: colors.background,
-      borderRadius: 12,
-      padding: 13,
-      marginTop: 2,
-      borderWidth: 1,
-      borderColor: colors.borderColor,
-    },
-    cardLabelRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      marginBottom: 10,
-    },
-    cardLabel: {
-      fontFamily: fonts.bold,
-      fontSize: 10,
-      color: colors.secondary,
-      textTransform: "uppercase",
-      letterSpacing: 0.4,
-    },
-    cardRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 8,
-    },
-    cardTextRight: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.xs ?? 12,
-      color: colors.text,
-    },
-    cardTextLeft: {
-      fontFamily: fonts.regular,
-      fontSize: fontSize.xs ?? 12,
+      fontFamily: fonts.medium,
+      fontSize: fontSize.xs,
       color: colors.textSecondary,
+      marginTop: 2,
+    },
+    summary: {
+      marginTop: 28,
+      paddingTop: 6,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.hairline,
     },
     totalDivider: {
-      height: 1,
+      height: StyleSheet.hairlineWidth,
       backgroundColor: colors.borderColor,
-      marginVertical: 8,
+      marginVertical: 4,
     },
-    totalLabel: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.sm,
-      color: colors.text,
-    },
-    totalValue: {
-      fontFamily: fonts.bold,
-      fontSize: fontSize.lg,
-      color: colors.primary,
-    },
-    footer: {
-      padding: 16,
-      borderTopWidth: 1,
-      borderTopColor: colors.borderColor,
-    },
-    button: {
-      width: "100%",
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      paddingVertical: 13,
-      backgroundColor: colors.primary,
-      borderRadius: 10,
-    },
-    buttonText: {
-      color: colors.background,
-      textAlign: "center",
-      fontSize: fontSize.sm,
-      fontFamily: fonts.semiBold,
-    },
+    footer: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16 },
     validationHint: {
-      textAlign: "center",
-      marginTop: 6,
-      fontSize: 10,
       fontFamily: fonts.regular,
+      fontSize: fontSize.xs,
       color: colors.textSecondary,
-    },
-    checkbox: {
-      width: 18,
-      height: 18,
-      borderWidth: 1,
-      borderColor: colors.borderColor,
-      borderRadius: 5,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    checkboxChecked: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: "rgba(0,0,0,0.4)",
-      justifyContent: "flex-end",
-    },
-    modalSheet: {
-      backgroundColor: colors.background,
-      borderTopLeftRadius: 18,
-      borderTopRightRadius: 18,
-      paddingHorizontal: 16,
-      paddingTop: 10,
-      paddingBottom: 24,
-    },
-    modalHandle: {
-      alignSelf: "center",
-      width: 36,
-      height: 4,
-      borderRadius: 2,
-      backgroundColor: colors.borderColor,
-      marginBottom: 12,
-    },
-    modalTitle: {
-      fontSize: fontSize.sm,
-      fontFamily: fonts.semiBold,
-      color: colors.text,
-      marginBottom: 6,
+      textAlign: "center",
+      marginTop: 10,
     },
     modalEmpty: {
+      fontFamily: fonts.regular,
+      fontSize: fontSize.sm,
+      color: colors.textSecondary,
       textAlign: "center",
-      paddingVertical: 20,
-      fontSize: fontSize.sm,
+      paddingVertical: 24,
+    },
+    helperText: {
       fontFamily: fonts.regular,
-      color: colors.textSecondary,
+      fontSize: fontSize.xs,
+      color: colors.lightText,
+      paddingHorizontal: 6,
+      marginTop: 2,
     },
-    modalOption: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingVertical: 11,
-      borderBottomWidth: 1,
-      borderColor: colors.borderColor,
-    },
-    modalOptionText: {
-      fontSize: fontSize.sm,
+    estimateNote: {
       fontFamily: fonts.regular,
-      color: colors.text,
-    },
-    modalOptionSub: {
-      fontSize: 11,
-      fontFamily: fonts.regular,
-      color: colors.textSecondary,
-      marginTop: 1,
-    },
-    modalDoneBtn: {
+      fontSize: fontSize.xs,
+      color: colors.error,
       marginTop: 10,
-      paddingVertical: 12,
-      borderRadius: 10,
-      backgroundColor: colors.primary,
-      alignItems: "center",
-    },
-    modalDoneBtnText: {
-      color: colors.background,
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.sm,
+      lineHeight: 16,
     },
   });
 

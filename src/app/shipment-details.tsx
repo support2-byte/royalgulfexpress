@@ -1,26 +1,35 @@
 import { api } from "@/api";
-import Header from "@/components/ui/Header";
+import Header, { useSheetStyle } from "@/components/ui/Header";
+import { StateView } from "@/components/ui/StateView";
+import { QuickAction } from "@/components/Home/QuickAction";
+import {
+  isOrderRole,
+  roleCan,
+  type Feature,
+  type OrderRole,
+} from "@/constants/permissions";
+import { useAppContext } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
+import { flipIcon, tr, ls } from "@/i18n";
+import DeliveryOptionsIcon from "@assets/icons/delivery.png";
+import GatepassIcon from "@assets/icons/gatepass.png";
+import StorageIcon from "@assets/icons/storage.png";
+import { router } from "expo-router";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import * as Clipboard from "expo-clipboard";
+import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 interface ShipmentItem {
   order_item_id: number;
   item_ref: string;
+  tracking_id: string | null;
   status: string | null;
   category: string | null;
   subcategory: string | null;
@@ -41,6 +50,7 @@ interface ShipmentItem {
 interface DeliveryRecord {
   id: number;
   item_ref: string;
+  tracking_id: string | null;
   status: string | null;
   delivery_amount: string | number | null;
   delivery_address: string | null;
@@ -49,6 +59,7 @@ interface DeliveryRecord {
 interface StorageRecord {
   id: number;
   item_ref: string;
+  tracking_id: string | null;
   status: string | null;
   storage: number | null;
   days: number | null;
@@ -56,6 +67,8 @@ interface StorageRecord {
 }
 
 interface ShipmentDetails {
+  /** Which side of this order the logged-in customer is on. */
+  role?: OrderRole | null;
   order_id: number;
   rgl_booking_number: string;
   created_at: string;
@@ -71,6 +84,49 @@ interface ShipmentDetails {
   storage: StorageRecord[];
   items: ShipmentItem[];
 }
+
+const ACTIONS: {
+  feature: Feature;
+  label: string;
+  description: string;
+  path: string;
+  icon: any;
+}[] = [
+  {
+    feature: "drop-off",
+    label: "Drop-off",
+    description: "Schedule a pickup from the sender",
+    path: "/drop-off",
+    icon: DeliveryOptionsIcon,
+  },
+  {
+    feature: "delivery",
+    label: "Delivery options",
+    description: "Choose how you receive it",
+    path: "/delivery-options",
+    icon: DeliveryOptionsIcon,
+  },
+  {
+    feature: "storage",
+    label: "Storage",
+    description: "Buy extra storage time",
+    path: "/purchase-storage",
+    icon: StorageIcon,
+  },
+  {
+    feature: "gatepass",
+    label: "Gatepass history",
+    description: "Past gatepasses",
+    path: "/gatepass-history",
+    icon: GatepassIcon,
+  },
+];
+
+const ROLE_TEXT: Record<OrderRole, string> = {
+  sender: "You are the sender on this booking",
+  receiver: "You are the receiver on this booking",
+  both: "You are the sender and receiver on this booking",
+};
 
 const formatDate = (value: string | null) => {
   if (!value) return "—";
@@ -97,7 +153,9 @@ const getStatusStyle = (status: string | null) => {
 const ShipmentDetailsScreen = () => {
   const { colors, fontSize, fonts } = useAppTheme();
   const styles = createStyles(colors, fontSize, fonts);
-  const { user } = useAuth();
+  const sheet = useSheetStyle();
+  const { user, can } = useAuth();
+  const { roleOf } = useAppContext();
   const { bookingNumber } = useLocalSearchParams<{ bookingNumber: string }>();
 
   const [data, setData] = useState<ShipmentDetails | null>(null);
@@ -153,16 +211,19 @@ const ShipmentDetailsScreen = () => {
 
   const onRefresh = useCallback(() => fetchShipment(true), [fetchShipment]);
 
+  const headerEl = (desc: string) => (
+    <Header name="Shipment details" description={desc} icon="cube" />
+  );
+
   if (loading) {
     return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <Header
-          name="Shipment Details"
-          description="Loading shipment information"
-          icon="cube"
-        />
-        <View style={styles.centerFill}>
-          <ActivityIndicator size="large" color={colors.primary} />
+      <SafeAreaView
+        style={styles.container}
+        edges={["left", "right", "bottom"]}
+      >
+        {headerEl("Loading shipment information")}
+        <View style={sheet}>
+          <StateView loading />
         </View>
       </SafeAreaView>
     );
@@ -170,29 +231,33 @@ const ShipmentDetailsScreen = () => {
 
   if (error || !data) {
     return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <Header
-          name="Shipment Details"
-          description="Something went wrong"
-          icon="cube"
-        />
-        <View style={styles.centerFill}>
-          <Ionicons
-            name="alert-circle-outline"
-            size={40}
-            color={colors.error}
+      <SafeAreaView
+        style={styles.container}
+        edges={["left", "right", "bottom"]}
+      >
+        {headerEl("Something went wrong")}
+        <View style={sheet}>
+          <StateView
+            icon="cloud-offline-outline"
+            label={error ?? "Shipment not found."}
+            actionLabel={tr("Try again")}
+            onAction={() => fetchShipment()}
           />
-          <Text style={styles.emptyText}>{error ?? "Shipment not found."}</Text>
-          <TouchableOpacity
-            style={styles.retryBtn}
-            onPress={() => fetchShipment()}
-          >
-            <Text style={styles.retryBtnText}>Try Again</Text>
-          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
+
+  // Role comes from the API (customer ref matched against this order's
+  // sender / receiver refs); the account-level list and account type are only
+  // fallbacks for older backends.
+  const role: OrderRole | null = isOrderRole(data.role)
+    ? data.role
+    : roleOf(data.rgl_booking_number);
+  const allowed = (feature: Feature) =>
+    role ? roleCan(role, feature) : can(feature);
+  const actions = ACTIONS.filter((a) => allowed(a.feature));
+  const showReceiverServices = allowed("storage") || allowed("delivery");
 
   const totalBoxes = data.items.reduce(
     (sum, i) => sum + (Number(i.total_number) || 0),
@@ -202,599 +267,503 @@ const ShipmentDetailsScreen = () => {
     (sum, i) => sum + (Number(i.weight) || 0),
     0,
   );
-  const receiverSt = getStatusStyle(data.receiver.status);
+
+  const StatusText = ({ status }: { status: string | null }) => {
+    const st = getStatusStyle(status);
+    return (
+      <View style={styles.statusRow}>
+        <View style={[styles.statusDot, { backgroundColor: st.text }]} />
+        <Text style={[styles.statusText, { color: st.text }]}>
+          {status ?? "Pending"}
+        </Text>
+      </View>
+    );
+  };
+
+  const Meta = ({
+    label,
+    value,
+  }: {
+    label: string;
+    value: string | number;
+  }) => (
+    <View style={styles.metaCell}>
+      <Text style={styles.metaLabel}>{label}</Text>
+      <Text style={styles.metaValue} numberOfLines={1}>
+        {value}
+      </Text>
+    </View>
+  );
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <Header
-        name="Shipment Details"
-        description={data.rgl_booking_number}
-        icon="cube"
-      />
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.bodyContainer}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.primary}
-          />
-        }
-      >
-        <Animated.View entering={FadeInDown.duration(350)}>
-          <View style={styles.headerRow}>
-            <Text style={styles.title}>{data.rgl_booking_number}</Text>
-          </View>
-          <Text style={styles.dateText}>
-            Created {formatDate(data.created_at)}
-          </Text>
-        </Animated.View>
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
+      {headerEl(tr("Created {date}", { date: formatDate(data.created_at) }))}
 
-        <Animated.View
-          entering={FadeInDown.duration(350).delay(60)}
-          style={styles.routeCard}
+      <View style={sheet}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.bodyContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+            />
+          }
         >
-          <View style={styles.routePointRow}>
-            <View style={styles.routeDotOrigin} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.routeLabel}>From</Text>
-              <Text style={styles.routeValue}>
-                {data.loading_place_name ?? "—"}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.routeLine} />
-          <View style={styles.routePointRow}>
-            <View style={styles.routeDotDestination} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.routeLabel}>To</Text>
-              <Text style={styles.routeValue}>
-                {data.destination_place_name ?? "—"}
-              </Text>
-            </View>
-          </View>
-        </Animated.View>
-
-        <Animated.View
-          entering={FadeInDown.duration(350).delay(100)}
-          style={styles.summaryRow}
-        >
-          <View style={styles.summaryPill}>
-            <Ionicons
-              name="albums-outline"
-              size={15}
-              color={colors.textSecondary}
-            />
-            <Text style={styles.summaryText}>
-              {data.items.length} item{data.items.length !== 1 ? "s" : ""}
-            </Text>
-          </View>
-          <View style={styles.summaryPill}>
-            <Ionicons
-              name="cube-outline"
-              size={15}
-              color={colors.textSecondary}
-            />
-            <Text style={styles.summaryText}>{totalBoxes} Boxes</Text>
-          </View>
-          <View style={styles.summaryPill}>
-            <Ionicons
-              name="scale-outline"
-              size={15}
-              color={colors.textSecondary}
-            />
-            <Text style={styles.summaryText}>{totalWeight} KG</Text>
-          </View>
-        </Animated.View>
-
-        <Animated.View
-          entering={FadeInDown.duration(350).delay(140)}
-          style={styles.card}
-        >
-          <View style={styles.cardLabelRow}>
-            <Ionicons
-              name="person-circle-outline"
-              size={16}
-              color={colors.secondary}
-            />
-            <Text style={styles.cardLabel}>Receiver</Text>
-          </View>
-          <Text style={styles.cardTitle}>
-            {data.receiver.receiver_name || "—"}
-          </Text>
-          {!!data.receiver.receiver_contact && (
-            <View style={styles.locationRow}>
-              <Ionicons
-                name="call-outline"
-                size={13}
-                color={colors.textSecondary}
-              />
-              <Text style={styles.cardText}>
-                {data.receiver.receiver_contact}
-              </Text>
-            </View>
-          )}
-          {!!data.receiver.receiver_address && (
-            <View style={styles.locationRow}>
-              <Ionicons
-                name="location-outline"
-                size={13}
-                color={colors.textSecondary}
-              />
-              <Text style={styles.cardText}>
-                {data.receiver.receiver_address}
-              </Text>
-            </View>
-          )}
-        </Animated.View>
-
-        <Animated.View entering={FadeInDown.duration(350).delay(160)}>
-          <Text style={styles.sectionTitle}>Items</Text>
-        </Animated.View>
-
-        {data.items.map((item, index) => {
-          const ist = getStatusStyle(item.status);
-          return (
-            <Animated.View
-              key={item.order_item_id}
-              entering={FadeInDown.duration(350).delay(180 + index * 50)}
-              style={styles.card}
+          <Animated.View entering={FadeInDown.duration(380)}>
+            <LinearGradient
+              colors={[colors.primary, colors.primaryDeep]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.routePanel}
             >
-              <View style={styles.itemHeaderRow}>
-                <Text style={styles.itemTitle} numberOfLines={1}>
-                  {item.subcategory || item.category || "Item"}
-                </Text>
-                <View style={[styles.itemChip, { backgroundColor: ist.bg }]}>
-                  <Text style={[styles.itemChipText, { color: ist.text }]}>
-                    {item.status ?? "Pending"}
-                  </Text>
+              <Text style={styles.routeKicker}>{tr("Booking number")}</Text>
+              <Text style={styles.title}>{data.rgl_booking_number}</Text>
+
+              <View style={styles.routeBlock}>
+                <View style={styles.routeRow}>
+                  <View
+                    style={[styles.routeDot, { backgroundColor: "#fff" }]}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.routeLabel}>{tr("From")}</Text>
+                    <Text style={styles.routeValue}>
+                      {data.loading_place_name ?? "—"}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.routeLine} />
+                <View style={styles.routeRow}>
+                  <View
+                    style={[
+                      styles.routeDot,
+                      { backgroundColor: colors.secondary },
+                    ]}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.routeLabel}>{tr("To")}</Text>
+                    <Text style={styles.routeValue}>
+                      {data.destination_place_name ?? "—"}
+                    </Text>
+                  </View>
                 </View>
               </View>
+            </LinearGradient>
+          </Animated.View>
+
+          <Animated.View
+            entering={FadeInDown.duration(380).delay(80)}
+            style={styles.stats}
+          >
+            <View style={styles.stat}>
+              <Text style={styles.statValue}>{data.items.length}</Text>
+              <Text style={styles.statLabel}>
+                Item{data.items.length !== 1 ? "s" : ""}
+              </Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.stat}>
+              <Text style={styles.statValue}>{totalBoxes}</Text>
+              <Text style={styles.statLabel}>{tr("Boxes")}</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.stat}>
+              <Text style={styles.statValue}>{totalWeight}</Text>
+              <Text style={styles.statLabel}>{tr("Kg")}</Text>
+            </View>
+          </Animated.View>
+
+          {role && (
+            <Animated.View
+              entering={FadeInDown.duration(380).delay(100)}
+              style={styles.roleRow}
+            >
+              <Ionicons
+                name={
+                  role === "sender"
+                    ? "arrow-up-circle-outline"
+                    : role === "receiver"
+                      ? "arrow-down-circle-outline"
+                      : "swap-vertical-outline"
+                }
+                size={18}
+                color={colors.primary}
+              />
+              <Text style={styles.roleText}>{tr(ROLE_TEXT[role])}</Text>
+            </Animated.View>
+          )}
+
+          {actions.length > 0 && (
+            <View>
+              <Text style={styles.sectionTitle}>{tr("Services")}</Text>
+              {actions.map((a, index) => (
+                <QuickAction
+                  key={a.path}
+                  icon={a.icon}
+                  label={tr(a.label)}
+                  description={tr(a.description)}
+                  index={index}
+                  onPress={() =>
+                    router.navigate({
+                      pathname: a.path as any,
+                      params: { bookingNumber: data.rgl_booking_number },
+                    })
+                  }
+                />
+              ))}
+            </View>
+          )}
+
+          <Animated.View entering={FadeInDown.duration(380).delay(120)}>
+            <Text style={styles.sectionTitle}>{tr("Receiver")}</Text>
+            <View style={styles.block}>
+              <Text style={styles.blockTitle}>
+                {data.receiver.receiver_name || "—"}
+              </Text>
+              {!!data.receiver.receiver_contact && (
+                <View style={styles.lineRow}>
+                  <Ionicons
+                    name="call-outline"
+                    size={14}
+                    color={colors.textSecondary}
+                  />
+                  <Text style={styles.lineText}>
+                    {data.receiver.receiver_contact}
+                  </Text>
+                </View>
+              )}
+              {!!data.receiver.receiver_address && (
+                <View style={styles.lineRow}>
+                  <Ionicons
+                    name="location-outline"
+                    size={14}
+                    color={colors.textSecondary}
+                  />
+                  <Text style={styles.lineText}>
+                    {data.receiver.receiver_address}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </Animated.View>
+
+          <Text style={styles.sectionTitle}>{tr("Items")}</Text>
+          {data.items.map((item, index) => (
+            <Animated.View
+              key={item.order_item_id}
+              entering={FadeInDown.duration(360).delay(
+                160 + Math.min(index, 5) * 50,
+              )}
+              style={styles.block}
+            >
+              <View style={styles.blockHeader}>
+                <Text style={styles.blockTitle} numberOfLines={1}>
+                  {item.subcategory || item.category || "Item"}
+                </Text>
+                <StatusText status={item.status} />
+              </View>
+
               <TouchableOpacity
-                style={styles.itemRefRow}
-                onPress={() => handleCopy(item.item_ref)}
+                style={styles.lineRow}
+                onPress={() => item.tracking_id && handleCopy(item.tracking_id)}
                 hitSlop={8}
                 activeOpacity={0.6}
               >
-                <Text
-                  style={{ ...styles.itemRef, flexShrink: 1 }}
-                  numberOfLines={1}
-                >
-                  {item.item_ref}
+                <Text style={styles.itemRef} numberOfLines={1}>
+                  {item.tracking_id ?? "—"}
                 </Text>
                 <Ionicons
                   name={
-                    copiedRef === item.item_ref ? "checkmark" : "copy-outline"
+                    copiedRef === item.tracking_id
+                      ? "checkmark"
+                      : "copy-outline"
                   }
                   size={13}
                   color={
-                    copiedRef === item.item_ref
+                    copiedRef === item.tracking_id
                       ? colors.primary
-                      : colors.textSecondary
+                      : colors.lightText
                   }
                 />
               </TouchableOpacity>
 
-              <View style={styles.itemMetaGrid}>
-                <View style={styles.itemMetaCell}>
-                  <Text style={styles.itemMetaLabel}>Category</Text>
-                  <Text style={styles.itemMetaValue}>
-                    {item.category || "—"}
-                  </Text>
-                </View>
-                <View style={styles.itemMetaCell}>
-                  <Text style={styles.itemMetaLabel}>Type</Text>
-                  <Text style={styles.itemMetaValue}>{item.type || "—"}</Text>
-                </View>
-                <View style={styles.itemMetaCell}>
-                  <Text style={styles.itemMetaLabel}>Quantity</Text>
-                  <Text style={styles.itemMetaValue}>
-                    {item.total_number ?? "—"}
-                  </Text>
-                </View>
-                <View style={styles.itemMetaCell}>
-                  <Text style={styles.itemMetaLabel}>Weight</Text>
-                  <Text style={styles.itemMetaValue}>
-                    {item.weight ? `${item.weight} KG` : "—"}
-                  </Text>
-                </View>
-                <View style={styles.itemMetaCell}>
-                  <Text style={styles.itemMetaLabel}>ETA</Text>
-                  <Text style={styles.itemMetaValue}>
-                    {formatDate(item.eta)}
-                  </Text>
-                </View>
-                <View style={styles.itemMetaCell}>
-                  <Text style={styles.itemMetaLabel}>Remaining</Text>
-                  <Text style={styles.itemMetaValue}>
-                    {item.remaining_qty ?? "—"}
-                  </Text>
-                </View>
+              <View style={styles.metaGrid}>
+                <Meta label="Category" value={item.category || "—"} />
+                <Meta label="Type" value={item.type || "—"} />
+                <Meta label="Quantity" value={item.total_number ?? "—"} />
+                <Meta
+                  label="Weight"
+                  value={item.weight ? `${item.weight} kg` : "—"}
+                />
+                <Meta label="ETA" value={formatDate(item.eta)} />
+                <Meta label="Remaining" value={item.remaining_qty ?? "—"} />
               </View>
 
-              <View style={styles.senderBlock}>
-                <View style={styles.cardLabelRow}>
-                  <Ionicons
-                    name="person-outline"
-                    size={14}
-                    color={colors.secondary}
-                  />
-                  <Text style={styles.cardLabel}>Sender</Text>
-                </View>
+              <View style={styles.sender}>
+                <Text style={styles.senderLabel}>{tr("Sender")}</Text>
                 {item.sender?.sender_name ? (
                   <>
-                    <Text style={styles.cardText}>
+                    <Text style={styles.lineTextStrong}>
                       {item.sender.sender_name}
                     </Text>
-                    <Text style={styles.cardTextMuted}>
+                    <Text style={styles.lineTextMuted}>
                       {item.sender.sender_contact || "No contact on file"}
                     </Text>
-                    <Text style={styles.cardTextMuted}>
+                    <Text style={styles.lineTextMuted}>
                       {item.sender.sender_address || "No address on file"}
                     </Text>
                   </>
                 ) : (
-                  <Text style={styles.cardTextMuted}>
-                    No sender information available
+                  <Text style={styles.lineTextMuted}>
+                    {tr("No sender information available")}
                   </Text>
                 )}
               </View>
             </Animated.View>
-          );
-        })}
+          ))}
 
-        <Animated.View entering={FadeInDown.duration(350).delay(220)}>
-          <Text style={styles.sectionTitle}>Storage</Text>
-        </Animated.View>
-        {data.storage.length > 0 ? (
-          data.storage.map((s, index) => {
-            const sst = getStatusStyle(s.status);
-            return (
+          {showReceiverServices && (
+            <Text style={styles.sectionTitle}>{tr("Storage")}</Text>
+          )}
+          {!showReceiverServices ? null : data.storage.length > 0 ? (
+            data.storage.map((st, index) => (
               <Animated.View
-                key={s.id}
-                entering={FadeInDown.duration(350).delay(240 + index * 50)}
-                style={styles.card}
+                key={st.id}
+                entering={FadeInDown.duration(360).delay(index * 50)}
+                style={styles.block}
               >
-                <View style={styles.itemHeaderRow}>
-                  <Text style={styles.itemTitle} numberOfLines={1}>
-                    {s.storage} KG · {s.days} days
+                <View style={styles.blockHeader}>
+                  <Text style={styles.blockTitle} numberOfLines={1}>
+                    {st.storage} kg · {st.days} days
                   </Text>
-                  <View style={[styles.itemChip, { backgroundColor: sst.bg }]}>
-                    <Text style={[styles.itemChipText, { color: sst.text }]}>
-                      {s.status ?? "Pending"}
-                    </Text>
-                  </View>
+                  <StatusText status={st.status} />
                 </View>
-                <View style={styles.itemHeaderRow}>
+                <View style={styles.blockHeader}>
                   <Text style={styles.itemRef} numberOfLines={1}>
-                    {s.item_ref}
+                    {st.tracking_id ?? "—"}
                   </Text>
                   <Text style={styles.amountText}>
-                    AED {Number(s.amount || 0).toLocaleString()}
+                    AED {Number(st.amount || 0).toLocaleString()}
                   </Text>
                 </View>
               </Animated.View>
-            );
-          })
-        ) : (
-          <View style={styles.card}>
-            <Text style={styles.cardTextMuted}>
-              No storage purchases for this shipment
+            ))
+          ) : (
+            <Text style={styles.emptyLine}>
+              {tr("No storage purchases for this shipment")}
             </Text>
-          </View>
-        )}
+          )}
 
-        <Animated.View entering={FadeInDown.duration(350).delay(280)}>
-          <Text style={styles.sectionTitle}>Delivery</Text>
-        </Animated.View>
-        {data.delivery.length > 0 ? (
-          data.delivery.map((d, index) => {
-            const dst = getStatusStyle(d.status);
-            return (
+          {showReceiverServices && (
+            <Text style={styles.sectionTitle}>{tr("Delivery")}</Text>
+          )}
+          {!showReceiverServices ? null : data.delivery.length > 0 ? (
+            data.delivery.map((d, index) => (
               <Animated.View
                 key={d.id}
-                entering={FadeInDown.duration(350).delay(300 + index * 50)}
-                style={styles.card}
+                entering={FadeInDown.duration(360).delay(index * 50)}
+                style={styles.block}
               >
-                <View style={styles.itemHeaderRow}>
-                  <Text style={styles.itemTitle} numberOfLines={1}>
-                    Delivery Request
+                <View style={styles.blockHeader}>
+                  <Text style={styles.blockTitle} numberOfLines={1}>
+                    {tr("Delivery request")}
                   </Text>
-                  <View style={[styles.itemChip, { backgroundColor: dst.bg }]}>
-                    <Text style={[styles.itemChipText, { color: dst.text }]}>
-                      {d.status ?? "Pending"}
-                    </Text>
-                  </View>
+                  <StatusText status={d.status} />
                 </View>
                 <Text style={styles.itemRef} numberOfLines={1}>
-                  {d.item_ref}
+                  {d.tracking_id ?? "—"}
                 </Text>
                 {!!d.delivery_address && (
-                  <View style={styles.locationRow}>
+                  <View style={styles.lineRow}>
                     <Ionicons
                       name="location-outline"
-                      size={13}
+                      size={14}
                       color={colors.textSecondary}
                     />
-                    <Text style={styles.cardText}>{d.delivery_address}</Text>
+                    <Text style={styles.lineText}>{d.delivery_address}</Text>
                   </View>
                 )}
-                <Text style={styles.amountText}>
+                <Text style={[styles.amountText, { marginTop: 8 }]}>
                   AED {Number(d.delivery_amount || 0).toLocaleString()}
                 </Text>
               </Animated.View>
-            );
-          })
-        ) : (
-          <View style={styles.card}>
-            <Text style={styles.cardTextMuted}>
-              No delivery requests for this shipment
+            ))
+          ) : (
+            <Text style={styles.emptyLine}>
+              {tr("No delivery requests for this shipment")}
             </Text>
-          </View>
-        )}
-      </ScrollView>
+          )}
+        </ScrollView>
+      </View>
     </SafeAreaView>
   );
 };
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
 ) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    centerFill: {
-      flex: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 10,
-      paddingHorizontal: 30,
-    },
-    bodyContainer: {
-      padding: 20,
-      paddingBottom: 40,
-    },
-    headerRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 4,
+    container: { flex: 1, backgroundColor: colors.surface },
+    bodyContainer: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 48 },
+    routePanel: { borderRadius: 28, padding: 22 },
+    routeKicker: {
+      fontFamily: fonts.medium,
+      fontSize: fontSize.sm,
+      color: "rgba(255,255,255,0.72)",
     },
     title: {
       fontFamily: fonts.bold,
-      fontSize: fontSize.xl,
-      color: colors.text,
+      fontSize: fontSize.xxl,
+      color: "#fff",
+      letterSpacing: ls(-0.4),
+      marginTop: 2,
     },
-    dateText: {
-      fontFamily: fonts.regular,
-      fontSize: fontSize.xs ?? 11,
-      color: colors.textSecondary,
-      marginBottom: 16,
-    },
-    routeCard: {
-      backgroundColor: colors.primary,
-      borderRadius: 16,
-      padding: 16,
-      marginBottom: 14,
-    },
-    routePointRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-    },
-    routeDotOrigin: {
-      width: 10,
-      height: 10,
-      borderRadius: 5,
-      backgroundColor: "#f58220",
-    },
-    routeDotDestination: {
-      width: 10,
-      height: 10,
-      borderRadius: 5,
-      backgroundColor: colors.background,
-    },
+    routeBlock: { marginTop: 20 },
+    routeRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+    routeDot: { width: 10, height: 10, borderRadius: 5 },
     routeLine: {
       width: 1,
-      height: 16,
-      backgroundColor: colors.background,
-      opacity: 0.4,
+      height: 22,
       marginLeft: 4.5,
-      marginVertical: 4,
+      backgroundColor: "rgba(255,255,255,0.35)",
     },
     routeLabel: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.xs ?? 10,
-      color: colors.background,
-      opacity: 0.8,
-      marginBottom: 2,
+      fontFamily: fonts.regular,
+      fontSize: fontSize.xs,
+      color: "rgba(255,255,255,0.65)",
     },
     routeValue: {
       fontFamily: fonts.semiBold,
-      fontSize: fontSize.sm,
-      color: colors.background,
+      fontSize: fontSize.md,
+      color: "#fff",
     },
-    summaryRow: {
-      flexDirection: "row",
-      gap: 10,
-      marginBottom: 16,
+    stats: { flexDirection: "row", alignItems: "center", paddingVertical: 22 },
+    stat: { flex: 1, alignItems: "center" },
+    statValue: {
+      fontFamily: fonts.bold,
+      fontSize: fontSize.xl,
+      color: colors.ink,
+      letterSpacing: ls(-0.4),
     },
-    summaryPill: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 12,
-      backgroundColor: "#F5F6F8",
-      borderWidth: 1,
-      borderColor: colors.borderColor,
-    },
-    summaryText: {
+    statLabel: {
       fontFamily: fonts.medium,
-      fontSize: fontSize.xs ?? 11,
+      fontSize: fontSize.xs,
       color: colors.textSecondary,
+      marginTop: 2,
+    },
+    statDivider: {
+      width: StyleSheet.hairlineWidth,
+      height: 30,
+      backgroundColor: colors.borderColor,
     },
     sectionTitle: {
       fontFamily: fonts.bold,
       fontSize: fontSize.md,
-      color: colors.text,
-      marginTop: 8,
-      marginBottom: 10,
-    },
-    card: {
-      backgroundColor: colors.background,
-      borderRadius: 14,
-      padding: 16,
-      marginBottom: 12,
-      borderWidth: 1,
-      borderColor: colors.borderColor,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.04,
-      shadowRadius: 6,
-      elevation: 1,
-    },
-    cardLabelRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      marginBottom: 8,
-    },
-    cardLabel: {
-      fontFamily: fonts.bold,
-      fontSize: fontSize.xs ?? 11,
-      color: colors.secondary,
-      textTransform: "uppercase",
-      letterSpacing: 0.4,
-    },
-    cardTitle: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.lg,
-      color: colors.text,
-      marginBottom: 6,
-    },
-    cardText: {
-      fontFamily: fonts.regular,
-      fontSize: fontSize.sm,
-      color: colors.textSecondary,
-    },
-    cardTextMuted: {
-      fontFamily: fonts.regular,
-      fontSize: fontSize.xs ?? 11,
-      color: colors.textSecondary,
-      marginTop: 2,
-    },
-    locationRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 4,
-      marginTop: 2,
-    },
-    cardChip: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      borderRadius: 20,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-    },
-    chipDot: {
-      width: 6,
-      height: 6,
-      borderRadius: 3,
-    },
-    chipText: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.sm,
-    },
-    itemHeaderRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: 8,
+      color: colors.ink,
+      marginTop: 26,
       marginBottom: 4,
     },
-    itemTitle: {
-      flex: 1,
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.md,
-      color: colors.text,
+    block: {
+      paddingVertical: 16,
+      gap: 8,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
     },
-    itemRef: {
-      fontFamily: fonts.regular,
-      fontSize: fontSize.xs ?? 11,
-      color: colors.textSecondary,
-    },
-    itemRefRow: {
+    blockHeader: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 6,
-      marginBottom: 10,
+      justifyContent: "space-between",
+      gap: 10,
     },
-    itemChip: {
-      borderRadius: 20,
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-    },
-    itemChipText: {
-      fontFamily: fonts.semiBold,
-      fontSize: 10,
-    },
-    itemMetaGrid: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: 12,
-    },
-    itemMetaCell: {
-      width: "30%",
-      minWidth: 90,
-    },
-    itemMetaLabel: {
-      fontFamily: fonts.regular,
-      fontSize: fontSize.xs ?? 10,
-      color: colors.textSecondary,
-      marginBottom: 2,
-    },
-    itemMetaValue: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.sm,
-      color: colors.text,
-    },
-    senderBlock: {
-      marginTop: 14,
-      paddingTop: 14,
-      borderTopWidth: 1,
-      borderTopColor: colors.borderColor,
-    },
-    amountText: {
-      textAlign: "right",
+    blockTitle: {
+      flexShrink: 1,
       fontFamily: fonts.bold,
       fontSize: fontSize.md,
-      color: "#f58220",
+      color: colors.ink,
     },
-    emptyText: {
+    statusRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+    statusDot: { width: 7, height: 7, borderRadius: 4 },
+    statusText: { fontFamily: fonts.semiBold, fontSize: fontSize.xs },
+    lineRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    lineText: {
+      flex: 1,
       fontFamily: fonts.regular,
       fontSize: fontSize.sm,
       color: colors.textSecondary,
-      textAlign: "center",
     },
-    retryBtn: {
-      marginTop: 10,
-      paddingHorizontal: 20,
-      paddingVertical: 10,
-      borderRadius: 10,
-      backgroundColor: colors.secondary,
-    },
-    retryBtnText: {
+    lineTextStrong: {
       fontFamily: fonts.semiBold,
       fontSize: fontSize.sm,
-      color: colors.background,
+      color: colors.ink,
+    },
+    lineTextMuted: {
+      fontFamily: fonts.regular,
+      fontSize: fontSize.xs,
+      color: colors.textSecondary,
+    },
+    itemRef: {
+      flexShrink: 1,
+      fontFamily: fonts.semiBold,
+      fontSize: fontSize.sm,
+      color: colors.primary,
+    },
+    metaGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      rowGap: 14,
+      marginTop: 6,
+    },
+    metaCell: { width: "33.33%", paddingRight: 8 },
+    metaLabel: {
+      fontFamily: fonts.regular,
+      fontSize: fontSize.xs,
+      color: colors.lightText,
+      marginBottom: 2,
+    },
+    metaValue: {
+      fontFamily: fonts.semiBold,
+      fontSize: fontSize.sm,
+      color: colors.ink,
+    },
+    sender: {
+      marginTop: 6,
+      paddingTop: 12,
+      gap: 2,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.hairline,
+    },
+    senderLabel: {
+      fontFamily: fonts.medium,
+      fontSize: fontSize.xs,
+      color: colors.lightText,
+      marginBottom: 4,
+    },
+    roleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      paddingVertical: 14,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    roleText: {
+      flex: 1,
+      fontFamily: fonts.semiBold,
+      fontSize: fontSize.sm,
+      color: colors.ink,
+    },
+    amountText: {
+      fontFamily: fonts.bold,
+      fontSize: fontSize.md,
+      color: colors.ink,
+    },
+    emptyLine: {
+      fontFamily: fonts.regular,
+      fontSize: fontSize.sm,
+      color: colors.textSecondary,
+      paddingVertical: 14,
     },
   });
 

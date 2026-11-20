@@ -1,3 +1,4 @@
+import { tr } from "@/i18n";
 import { useAuth } from "@/context/AuthContext";
 import { useFonts } from "expo-font";
 import { router } from "expo-router";
@@ -61,7 +62,7 @@ export default function Index() {
         } catch (error: any) {
           Toast.show({
             type: "error",
-            text1: "Something went wrong!",
+            text1: tr("Something went wrong!"),
             text2: error.message,
           });
         }

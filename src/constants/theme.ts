@@ -11,6 +11,11 @@ export const Colors = {
     lightText: "#929292",
     borderColor: "#e0e0e0",
     lightGrey: "#eeeeee",
+    surface: "#F4F6F6",
+    dome: "#E6ECEB",
+    ink: "#0E1B1A",
+    hairline: "#E7EBEA",
+    primaryDeep: "#043A37",
   },
 
   dark: {
@@ -23,6 +28,11 @@ export const Colors = {
     lightText: "#dbdbdb",
     borderColor: "#e0e0e0",
     lightGrey: "#eeeeee",
+    surface: "#F4F6F6",
+    dome: "#E6ECEB",
+    ink: "#0E1B1A",
+    hairline: "#E7EBEA",
+    primaryDeep: "#043A37",
   },
 
   success: "#2AA63E",
@@ -39,6 +49,8 @@ export const Fonts = {
   semiBold: "RedditSans-SemiBold",
   bold: "RedditSans-Bold",
 } as const;
+
+export type FontSet = Record<"regular" | "medium" | "semiBold" | "bold", string>;
 
 export const FontSize = {
   xs: Platform.select({ ios: 12, android: 11, default: 12 })!,

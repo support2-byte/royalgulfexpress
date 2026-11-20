@@ -1,21 +1,29 @@
+import { Button } from "@/components/ui/Button";
+import {
+  OptionRow,
+  SelectField,
+  SheetModal,
+  TextField,
+} from "@/components/ui/Form";
+import { LanguageButton } from "@/components/ui/LanguageSwitcher";
+import { Text } from "@/components/ui/Text";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
-import logo from "@assets/images/logo-black.png";
+import { ls, tr } from "@/i18n";
+import logo from "@assets/images/logo.png";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
   Image,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { OtpInput } from "react-native-otp-entry";
+import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 
@@ -23,7 +31,7 @@ type Login = {
   email: string;
 };
 
-type AccountType = "receiver" | "shipper";
+type AccountType = "receiver" | "sender";
 
 type Signup = {
   fullName: string;
@@ -35,7 +43,7 @@ type Signup = {
 
 const ACCOUNT_TYPE_OPTIONS: { label: string; value: AccountType }[] = [
   { label: "Receiver", value: "receiver" },
-  { label: "Shipper", value: "shipper" },
+  { label: "Sender", value: "sender" },
 ];
 
 const Auth = () => {
@@ -69,8 +77,8 @@ const Auth = () => {
       if (!login.email.trim()) {
         Toast.show({
           type: "error",
-          text1: "Missing information",
-          text2: "Please enter your email.",
+          text1: tr("Missing information"),
+          text2: tr("Please enter your email."),
         });
         return;
       }
@@ -93,8 +101,8 @@ const Auth = () => {
     ) {
       Toast.show({
         type: "error",
-        text1: "Missing information",
-        text2: "Please complete all fields.",
+        text1: tr("Missing information"),
+        text2: tr("Please complete all fields."),
       });
       return;
     }
@@ -114,8 +122,8 @@ const Auth = () => {
     if (!otp.trim()) {
       Toast.show({
         type: "error",
-        text1: "Missing OTP",
-        text2: "Enter the code sent to your email.",
+        text1: tr("Missing OTP"),
+        text2: tr("Enter the code sent to your email."),
       });
       return;
     }
@@ -145,8 +153,19 @@ const Auth = () => {
     ACCOUNT_TYPE_OPTIONS.find((opt) => opt.value === signup.accountType)
       ?.label ?? "Select account type";
 
+  const headlineFull = tr(
+    otpStep && isLogin
+      ? "Check your email."
+      : isLogin
+        ? "Welcome back."
+        : "Create your account.",
+  );
+  const lastSpace = headlineFull.lastIndexOf(" ");
+  const headline = headlineFull.slice(0, lastSpace);
+  const headlineMuted = headlineFull.slice(lastSpace + 1);
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -156,175 +175,135 @@ const Auth = () => {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Image source={logo} style={styles.logo} resizeMode="contain" />
+          <LanguageButton />
+          <Animated.View entering={FadeIn.duration(500)} style={styles.hero}>
+            <Image source={logo} style={styles.logo} resizeMode="contain" />
+            <Text style={styles.headline}>
+              {headline}{" "}
+              <Text style={styles.headlineMuted}>{headlineMuted}</Text>
+            </Text>
+            <Text style={styles.subline}>
+              {otpStep && isLogin
+                ? "Enter the 6-digit code we just sent you."
+                : isLogin
+                  ? "Sign in to track and manage your cargo."
+                  : "Tell us a little about yourself."}
+            </Text>
+          </Animated.View>
 
-          {isLogin && otpStep ? (
-            <>
-              <View style={styles.inputContainer}>
+          <Animated.View
+            key={otpStep ? "otp" : isLogin ? "login" : "signup"}
+            entering={FadeInDown.duration(420).delay(80)}
+            style={styles.sheet}
+          >
+            {isLogin && otpStep ? (
+              <>
                 <Text style={styles.label}>
-                  Enter the 6-digit code sent to{" "}
-                  <Text style={{ ...styles.label, color: colors.primary }}>
-                    {login.email}
-                  </Text>
+                  Code sent to{" "}
+                  <Text style={{ color: colors.primary }}>{login.email}</Text>
                 </Text>
-
                 <OtpInput
                   numberOfDigits={6}
                   onTextChange={setOtp}
                   theme={{
-                    containerStyle: { marginTop: 20 },
+                    containerStyle: { marginTop: 18, marginBottom: 28 },
                     pinCodeContainerStyle: {
-                      borderColor: colors.borderColor,
-                      backgroundColor: colors.background,
+                      borderWidth: 0,
+                      borderRadius: 18,
+                      width: 48,
+                      height: 58,
+                      backgroundColor: colors.surface,
                     },
-                    pinCodeTextStyle: { color: colors.text },
+                    pinCodeTextStyle: {
+                      color: colors.ink,
+                      fontFamily: fonts.bold,
+                    },
                     focusedPinCodeContainerStyle: {
+                      borderWidth: 2,
                       borderColor: colors.primary,
+                      backgroundColor: colors.background,
                     },
                   }}
                 />
-              </View>
-
-              <TouchableOpacity
-                style={styles.button}
-                activeOpacity={0.8}
-                onPress={handleVerifyPress}
-                disabled={verifying}
-              >
-                <Text style={styles.buttonText}>
-                  {verifying ? "VERIFYING..." : "VERIFY & SIGN IN"}
-                </Text>
-              </TouchableOpacity>
-
-              <View style={styles.toggleContainer}>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={handleResend}
-                  disabled={submitting}
-                >
-                  <Text
-                    style={{ ...styles.toggleLink, color: colors.secondary }}
+                <Button
+                  label={verifying ? "Verifying..." : "Verify & sign in"}
+                  variant="primary"
+                  loading={verifying}
+                  onPress={handleVerifyPress}
+                />
+                <View style={styles.toggleContainer}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={handleResend}
+                    disabled={submitting}
                   >
-                    {submitting ? "Resending..." : "Resend code"}
-                  </Text>
-                </TouchableOpacity>
-                <Text style={styles.toggleText}> · </Text>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={resetToLoginStart}
-                >
-                  <Text
-                    style={{ ...styles.toggleLink, color: colors.secondary }}
+                    <Text style={styles.toggleLink}>
+                      {submitting ? "Resending..." : "Resend code"}
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={styles.toggleDot} />
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={resetToLoginStart}
                   >
-                    Change email
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          ) : (
-            <>
-              {!isLogin && (
-                <>
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Full Name *</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter Full Name"
-                      placeholderTextColor={colors.lightText}
+                    <Text style={styles.toggleLink}>{tr("Change email")}</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                {!isLogin && (
+                  <>
+                    <TextField
+                      icon="person-outline"
+                      placeholder={tr("Full name")}
                       value={signup.fullName}
                       onChangeText={(fullName) =>
                         setSignup((prev) => ({ ...prev, fullName }))
                       }
                       autoCapitalize="words"
                     />
-                  </View>
-
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Phone *</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter phone number"
-                      placeholderTextColor={colors.lightText}
+                    <TextField
+                      icon="call-outline"
+                      placeholder={tr("Phone number")}
                       value={signup.phone}
                       onChangeText={(phone) =>
                         setSignup((prev) => ({ ...prev, phone }))
                       }
                       keyboardType="phone-pad"
                     />
-                  </View>
-
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Account Type *</Text>
-                    <TouchableOpacity
-                      style={styles.input}
-                      activeOpacity={0.8}
+                    <SelectField
+                      icon="briefcase-outline"
+                      value={selectedAccountTypeLabel}
+                      placeholder={tr("Account type")}
                       onPress={() => setTypeDropdownOpen(true)}
-                    >
-                      <Text
-                        style={{
-                          color: colors.text,
-                          fontFamily: fonts.regular,
-                          fontSize: fontSize.md,
-                        }}
-                      >
-                        {selectedAccountTypeLabel}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <Modal
+                    />
+                    <SheetModal
                       visible={typeDropdownOpen}
-                      transparent
-                      animationType="fade"
-                      onRequestClose={() => setTypeDropdownOpen(false)}
+                      title={tr("Account type")}
+                      onClose={() => setTypeDropdownOpen(false)}
                     >
-                      <TouchableOpacity
-                        style={styles.modalOverlay}
-                        activeOpacity={1}
-                        onPress={() => setTypeDropdownOpen(false)}
-                      >
-                        <View style={styles.dropdownMenu}>
-                          {ACCOUNT_TYPE_OPTIONS.map((opt) => (
-                            <TouchableOpacity
-                              key={opt.value}
-                              style={styles.dropdownItem}
-                              onPress={() => {
-                                setSignup((prev) => ({
-                                  ...prev,
-                                  accountType: opt.value,
-                                }));
-                                setTypeDropdownOpen(false);
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  color:
-                                    signup.accountType === opt.value
-                                      ? colors.primary
-                                      : colors.text,
-                                  fontFamily:
-                                    signup.accountType === opt.value
-                                      ? fonts.semiBold
-                                      : fonts.regular,
-                                  fontSize: fontSize.md,
-                                }}
-                              >
-                                {opt.label}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </TouchableOpacity>
-                    </Modal>
-                  </View>
-                </>
-              )}
+                      {ACCOUNT_TYPE_OPTIONS.map((opt) => (
+                        <OptionRow
+                          key={opt.value}
+                          title={opt.label}
+                          selected={signup.accountType === opt.value}
+                          onPress={() => {
+                            setSignup((prev) => ({
+                              ...prev,
+                              accountType: opt.value,
+                            }));
+                            setTypeDropdownOpen(false);
+                          }}
+                        />
+                      ))}
+                    </SheetModal>
+                  </>
+                )}
 
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Email *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter email"
-                  placeholderTextColor={colors.lightText}
+                <TextField
+                  icon="mail-outline"
+                  placeholder={tr("Email address")}
                   inputMode="email"
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -338,73 +317,30 @@ const Auth = () => {
                     }
                   }}
                 />
-              </View>
 
-              {/* <View style={styles.inputContainer}>
-                <Text style={styles.label}>Password *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter password"
-                  placeholderTextColor={colors.lightText}
-                  secureTextEntry
-                  value={isLogin ? login.password : signup.password}
-                  onChangeText={(password) => {
-                    if (isLogin) {
-                      setLogin((prev) => ({ ...prev, password }));
-                    } else {
-                      setSignup((prev) => ({ ...prev, password }));
-                    }
-                  }}
+                <Button
+                  style={styles.submit}
+                  variant="primary"
+                  label={
+                    isLogin
+                      ? submitting
+                        ? "Signing in..."
+                        : "Continue"
+                      : submitting
+                        ? "Signing up..."
+                        : "Create account"
+                  }
+                  icon="arrow-forward"
+                  loading={submitting}
+                  onPress={handleAuthPress}
                 />
-              </View> */}
 
-              {/* {isLogin && (
-                <Text
-                  style={styles.forgotText}
-                  onPress={() => router.navigate("/forgot-password")}
-                >
-                  Forgot Password?
+                <Text style={styles.footnote}>
+                  {tr("We'll email you a one-time code. No password needed.")}
                 </Text>
-              )} */}
-
-              <TouchableOpacity
-                style={styles.button}
-                activeOpacity={0.8}
-                onPress={handleAuthPress}
-                disabled={submitting}
-              >
-                <Text style={styles.buttonText}>
-                  {isLogin
-                    ? submitting
-                      ? "SIGNING IN..."
-                      : "SIGN IN"
-                    : submitting
-                      ? "SIGNING UP..."
-                      : "SIGN UP"}
-                </Text>
-              </TouchableOpacity>
-
-              {/* <View style={styles.toggleContainer}>
-                <Text style={styles.toggleText}>
-                  {isLogin
-                    ? "Don't have an account?"
-                    : "Already have an account?"}
-                </Text>
-
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    setIsLogin((prev) => !prev);
-                    resetToLoginStart();
-                  }}
-                >
-                  <Text style={styles.toggleLink}>
-                    {isLogin ? " Signup" : " Login"}
-                  </Text>
-                </TouchableOpacity>
-              </View> */}
-            </>
-          )}
+              </>
+            )}
+          </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -417,94 +353,65 @@ const createStyles = (
   fonts: ReturnType<typeof useAppTheme>["fonts"],
 ) =>
   StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
+    container: { flex: 1, backgroundColor: colors.surface },
     keyboardView: { flex: 1 },
-    scrollContent: { flexGrow: 1, justifyContent: "center", padding: 20 },
-    logo: { width: 280, height: 75, alignSelf: "center", marginBottom: 30 },
-    title: {
-      fontSize: fontSize.xxl,
+    scrollContent: { flexGrow: 1 },
+    hero: { paddingHorizontal: 24, paddingTop: 28, paddingBottom: 32 },
+    logo: { width: 220, height: 70, marginBottom: 20, marginLeft: -10 },
+    headline: {
+      fontSize: 38,
+      lineHeight: 44,
       fontFamily: fonts.bold,
-      color: colors.text,
-      textAlign: "center",
-      marginBottom: 25,
+      color: colors.ink,
+      letterSpacing: ls(-1.2),
     },
-    inputContainer: { width: "100%", marginBottom: 14 },
-    input: {
-      width: "100%",
-      paddingHorizontal: 15,
-      paddingVertical: 10,
+    headlineMuted: { color: colors.lightText },
+    subline: {
+      fontSize: fontSize.sm,
+      fontFamily: fonts.medium,
+      color: colors.textSecondary,
+      marginTop: 10,
+      lineHeight: 20,
+    },
+    sheet: {
+      flex: 1,
       backgroundColor: colors.background,
-      color: colors.text,
-      borderWidth: 1,
-      borderColor: colors.borderColor,
-      borderRadius: 10,
-      fontSize: fontSize.md,
-      fontFamily: fonts.regular,
-      justifyContent: "center",
+      borderTopLeftRadius: 32,
+      borderTopRightRadius: 32,
+      paddingHorizontal: 24,
+      paddingTop: 32,
+      paddingBottom: 40,
     },
     label: {
-      color: colors.text,
+      color: colors.textSecondary,
       fontSize: fontSize.sm,
-      fontFamily: fonts.semiBold,
-      marginLeft: 10,
-      marginBottom: 5,
-    },
-    button: {
-      width: "100%",
-      marginTop: 20,
-      marginBottom: 20,
-      paddingHorizontal: 20,
-      paddingVertical: 10,
-      backgroundColor: colors.primary,
-      borderRadius: 10,
-    },
-    buttonText: {
-      color: colors.background,
-      textAlign: "center",
-      fontSize: fontSize.md,
-      fontFamily: fonts.semiBold,
-    },
-    forgotText: {
       fontFamily: fonts.medium,
-      fontSize: fontSize.sm,
-      color: colors.error,
-      alignSelf: "flex-end",
-      marginTop: 2,
+    },
+    submit: { marginTop: 16 },
+    footnote: {
+      fontFamily: fonts.regular,
+      fontSize: fontSize.xs,
+      color: colors.lightText,
+      textAlign: "center",
+      marginTop: 18,
     },
     toggleContainer: {
       flexDirection: "row",
-      justifyContent: "center",
       alignItems: "center",
+      justifyContent: "center",
+      gap: 12,
+      marginTop: 22,
     },
-    toggleText: {
-      fontFamily: fonts.regular,
-      fontSize: fontSize.sm,
-      color: colors.textSecondary,
+    toggleDot: {
+      width: 4,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: colors.borderColor,
     },
     toggleLink: {
       fontFamily: fonts.semiBold,
       fontSize: fontSize.sm,
-      color: colors.primary,
-    },
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: "rgba(0,0,0,0.3)",
-      justifyContent: "center",
-      alignItems: "center",
-    },
-    dropdownMenu: {
-      width: "80%",
-      backgroundColor: colors.background,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.borderColor,
-      overflow: "hidden",
-    },
-    dropdownItem: {
-      paddingVertical: 14,
-      paddingHorizontal: 18,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.borderColor,
+      color: colors.secondary,
     },
   });
 

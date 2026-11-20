@@ -1,10 +1,19 @@
+import "@/i18n/patches";
 import { AppProvider } from "@/context/AppContext";
 import { AuthProvider } from "@/context/AuthContext";
+import { LanguageProvider, useI18n } from "@/i18n";
+import {
+  NotoSansArabic_400Regular,
+  NotoSansArabic_500Medium,
+  NotoSansArabic_600SemiBold,
+  NotoSansArabic_700Bold,
+} from "@expo-google-fonts/noto-sans-arabic";
 import { useFonts } from "expo-font";
 import { DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
+import { View } from "react-native";
 import Toast from "react-native-toast-message";
 
 import RedditSansBold from "../../assets/fonts/RedditSans-Bold.ttf";
@@ -20,6 +29,10 @@ export default function RootLayout() {
     "RedditSans-Medium": RedditSansMedium,
     "RedditSans-SemiBold": RedditSansSemiBold,
     "RedditSans-Bold": RedditSansBold,
+    "NotoSansArabic-Regular": NotoSansArabic_400Regular,
+    "NotoSansArabic-Medium": NotoSansArabic_500Medium,
+    "NotoSansArabic-SemiBold": NotoSansArabic_600SemiBold,
+    "NotoSansArabic-Bold": NotoSansArabic_700Bold,
   });
 
   useEffect(() => {
@@ -33,14 +46,17 @@ export default function RootLayout() {
   }
 
   return (
-    <AuthProvider>
-      <AppProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <AppProvider>
+          <Direction>
         <ThemeProvider value={DefaultTheme}>
           <StatusBar style="dark" />
           <Stack
             screenOptions={{
               headerShown: false,
               animation: "fade_from_bottom",
+              contentStyle: { backgroundColor: "#F4F6F6" },
             }}
             initialRouteName="index"
           >
@@ -62,7 +78,17 @@ export default function RootLayout() {
 
           <Toast position="bottom" swipeable />
         </ThemeProvider>
-      </AppProvider>
-    </AuthProvider>
+          </Direction>
+        </AppProvider>
+      </AuthProvider>
+    </LanguageProvider>
+  );
+}
+
+/** Flips layout direction for Arabic / Urdu without needing an app restart. */
+function Direction({ children }: { children: React.ReactNode }) {
+  const { isRTL } = useI18n();
+  return (
+    <View style={{ flex: 1, direction: isRTL ? "rtl" : "ltr" }}>{children}</View>
   );
 }

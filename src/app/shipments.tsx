@@ -1,4 +1,7 @@
-import Header from "@/components/ui/Header";
+import { ls, tr } from "@/i18n";
+import { LAYOUT } from "@/constants/motion";
+import Header, { useSheetStyle } from "@/components/ui/Header";
+import { StateView } from "@/components/ui/StateView";
 import {
   DefaultStatusStyle,
   ShipmentStatus,
@@ -10,18 +13,13 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  LayoutAnimation,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import { RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Text, TextInput } from "@/components/ui/Text";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 interface ShipmentRow {
@@ -43,6 +41,9 @@ interface ShipmentRow {
 interface OrderItemLine {
   order_item_id: number;
   item_ref: string;
+  tracking_id: string | null;
+  category: string | null;
+  subcategory: string | null;
   status: string | null;
   boxes: number;
   weight: number;
@@ -61,6 +62,7 @@ interface OrderGroup {
 export default function Shipments() {
   const { colors, fontSize, fonts } = useAppTheme();
   const styles = createStyles(colors, fontSize, fonts);
+  const sheet = useSheetStyle();
   const {
     orders,
     shipmentsLoading: loading,
@@ -88,7 +90,6 @@ export default function Shipments() {
   );
 
   const toggleExpand = (orderId: number) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded((prev) => {
       const next = new Set(prev);
       next.has(orderId) ? next.delete(orderId) : next.add(orderId);
@@ -104,7 +105,7 @@ export default function Shipments() {
       .map((o) => {
         const bookingMatch = o.booking_number.toLowerCase().includes(q);
         const items = o.items.filter((i) =>
-          i.item_ref.toLowerCase().includes(q),
+          (i.tracking_id ?? "").toLowerCase().includes(q),
         );
         if (bookingMatch) return o;
         if (items.length > 0) return { ...o, items };
@@ -114,89 +115,82 @@ export default function Shipments() {
   }, [orders, search]);
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <Header
         name="Shipments"
-        description="Track all your shipments"
+        description={
+          orders.length > 0
+            ? tr(orders.length > 1 ? "{n} bookings on your account" : "{n} booking on your account", { n: orders.length })
+            : "Track all your shipments"
+        }
         icon="boat"
       />
 
-      <View style={styles.searchRow}>
-        <Ionicons name="search" color={colors.textSecondary} size={20} />
-        <TextInput
-          style={styles.searchInput}
-          inputMode="text"
-          placeholder="Search by booking # or item ref"
-          placeholderTextColor={colors.lightText}
-          value={search}
-          onChangeText={setSearch}
-        />
-        {search.length > 0 && (
-          <TouchableOpacity onPress={() => setSearch("")} hitSlop={10}>
-            <Ionicons
-              name="close-circle"
-              color={colors.textSecondary}
-              size={20}
-            />
-          </TouchableOpacity>
+      <View style={sheet}>
+        <View style={styles.searchRow}>
+          <Ionicons name="search" color={colors.lightText} size={18} />
+          <TextInput
+            style={styles.searchInput}
+            inputMode="text"
+            placeholder={tr("Booking number or tracking ID")}
+            placeholderTextColor={colors.lightText}
+            value={search}
+            onChangeText={setSearch}
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch("")} hitSlop={10}>
+              <Ionicons
+                name="close-circle"
+                color={colors.lightText}
+                size={18}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {loading ? (
+          <StateView loading />
+        ) : error ? (
+          <StateView
+            icon="cloud-offline-outline"
+            label={error}
+            actionLabel={tr("Try again")}
+            onAction={onRefresh}
+          />
+        ) : filtered.length === 0 ? (
+          <StateView
+            icon="boat-outline"
+            label={search ? "No matching shipments" : "No shipments available"}
+          />
+        ) : (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            keyboardShouldPersistTaps="handled"
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.primary}
+              />
+            }
+          >
+            {filtered.map((order, index) => (
+              <OrderCard
+                key={order.order_id}
+                order={order}
+                index={index}
+                expanded={expanded.has(order.order_id)}
+                onToggle={() => toggleExpand(order.order_id)}
+                styles={styles}
+                colors={colors}
+                copiedRef={copiedRef}
+                onCopy={handleCopy}
+              />
+            ))}
+          </ScrollView>
         )}
       </View>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.primary}
-          />
-        }
-      >
-        {loading ? (
-          <View style={styles.emptyState}>
-            <ActivityIndicator size="large" color={colors.secondary} />
-            <Text style={styles.emptyText}>Loading shipments...</Text>
-          </View>
-        ) : error ? (
-          <View style={styles.emptyState}>
-            <Ionicons
-              name="alert-circle-outline"
-              size={40}
-              color={colors.error}
-            />
-            <Text style={styles.emptyText}>{error}</Text>
-            <TouchableOpacity style={styles.retryBtn} onPress={onRefresh}>
-              <Text style={styles.retryBtnText}>Try Again</Text>
-            </TouchableOpacity>
-          </View>
-        ) : filtered.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons
-              name="file-tray-outline"
-              size={40}
-              color={colors.textSecondary}
-            />
-            <Text style={styles.emptyText}>
-              {search ? "No matching shipments" : "No shipments available"}
-            </Text>
-          </View>
-        ) : (
-          filtered.map((order, index) => (
-            <OrderCard
-              key={order.order_id}
-              order={order}
-              index={index}
-              expanded={expanded.has(order.order_id)}
-              onToggle={() => toggleExpand(order.order_id)}
-              styles={styles}
-              colors={colors}
-              copiedRef={copiedRef}
-              onCopy={handleCopy}
-            />
-          ))
-        )}
-      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -257,322 +251,348 @@ function OrderCard({
   const nextEta = order.items.find((i) => i.eta)?.eta;
 
   return (
-    <Animated.View entering={FadeInDown.duration(300).delay(60 + index * 60)}>
-      <View style={styles.card}>
-        <TouchableOpacity activeOpacity={0.75} onPress={onToggle}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>{order.booking_number}</Text>
+    <Animated.View
+      entering={FadeInDown.duration(320).delay(Math.min(index, 6) * 55)}
+      layout={LAYOUT}
+      style={styles.card}
+    >
+      <TouchableOpacity activeOpacity={0.7} onPress={onToggle}>
+        <View style={styles.cardHeaderRow}>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {order.booking_number}
+          </Text>
+          <View style={styles.statusRow}>
+            <View style={[styles.statusDot, { backgroundColor: st.dot }]} />
+            <Text
+              style={[styles.chipText, { color: st.text }]}
+              numberOfLines={1}
+            >
+              {orderStatus}
+            </Text>
           </View>
-          <Text style={styles.routeText} numberOfLines={1}>
-            From: {order.pol}
-          </Text>
+        </View>
 
-          <Text style={styles.routeText} numberOfLines={1}>
-            To: {order.pod}
-          </Text>
-          <View style={styles.metaRow}>
+        <View style={styles.route}>
+          <View style={styles.routeRail}>
+            <View style={[styles.node, { backgroundColor: colors.primary }]} />
+            <View style={styles.nodeLine} />
+            <View
+              style={[styles.node, { backgroundColor: colors.secondary }]}
+            />
+          </View>
+          <View style={styles.routeTexts}>
+            <Text style={styles.routeText} numberOfLines={1}>
+              {order.pol}
+            </Text>
+            <Text style={styles.routeText} numberOfLines={1}>
+              {order.pod}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.metaRow}>
+          <View style={styles.metaItem}>
+            <Ionicons
+              name="albums-outline"
+              size={14}
+              color={colors.textSecondary}
+            />
+            <Text style={styles.metaText}>
+              {itemCount} item{itemCount !== 1 ? "s" : ""}
+            </Text>
+          </View>
+          <View style={styles.metaItem}>
+            <Ionicons
+              name="cube-outline"
+              size={14}
+              color={colors.textSecondary}
+            />
+            <Text style={styles.metaText}>{totalBoxes} boxes</Text>
+          </View>
+          <View style={styles.metaItem}>
+            <Ionicons
+              name="scale-outline"
+              size={14}
+              color={colors.textSecondary}
+            />
+            <Text style={styles.metaText}>{totalWeight} kg</Text>
+          </View>
+          {nextEta && (
             <View style={styles.metaItem}>
               <Ionicons
-                name="albums-outline"
+                name="time-outline"
                 size={14}
                 color={colors.textSecondary}
               />
               <Text style={styles.metaText}>
-                {itemCount} item{itemCount !== 1 ? "s" : ""}
+                {new Date(nextEta).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                })}
               </Text>
             </View>
-            <View style={styles.metaItem}>
-              <Ionicons
-                name="cube-outline"
-                size={14}
-                color={colors.textSecondary}
-              />
-              <Text style={styles.metaText}>{totalBoxes} Boxes</Text>
-            </View>
-            <View style={styles.metaItem}>
-              <Ionicons
-                name="scale-outline"
-                size={14}
-                color={colors.textSecondary}
-              />
-              <Text style={styles.metaText}>{totalWeight} KG</Text>
-            </View>
-            {nextEta && (
-              <View style={styles.metaItem}>
-                <Ionicons
-                  name="time-outline"
-                  size={14}
-                  color={colors.textSecondary}
-                />
-                <Text style={styles.metaText}>
-                  {new Date(nextEta).toLocaleDateString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </Text>
-              </View>
-            )}
-          </View>
-
-          <View style={styles.expandRow}>
-            <Text style={styles.expandText}>
-              {expanded ? "Hide items" : "View items"}
-            </Text>
-            <Ionicons
-              name={expanded ? "chevron-up" : "chevron-down"}
-              size={15}
-              color={colors.textSecondary}
-            />
-          </View>
-        </TouchableOpacity>
-
-        {expanded && (
-          <View style={styles.itemsBlock}>
-            {order.items.map((item) => {
-              const ist = statusStyle(item.status);
-              return (
-                <View key={item.order_item_id} style={styles.itemRow}>
-                  <View style={{ flex: 1 }}>
-                    <TouchableOpacity
-                      style={styles.itemRefRow}
-                      onPress={() => onCopy(item.item_ref)}
-                      hitSlop={8}
-                      activeOpacity={0.6}
-                    >
-                      <Text style={styles.itemRef} numberOfLines={1}>
-                        {item.item_ref}
-                      </Text>
-                      <Ionicons
-                        name={
-                          copiedRef === item.item_ref
-                            ? "checkmark"
-                            : "copy-outline"
-                        }
-                        size={12}
-                        color={
-                          copiedRef === item.item_ref
-                            ? colors.primary
-                            : colors.textSecondary
-                        }
-                      />
-                    </TouchableOpacity>
-                    <Text style={styles.itemSub}>
-                      {item.boxes} boxes · {item.weight} KG
-                    </Text>
-                  </View>
-                  <View style={[styles.itemChip, { backgroundColor: ist.bg }]}>
-                    <Text style={[styles.itemChipText, { color: ist.text }]}>
-                      {item.status ?? "Pending"}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        <View style={styles.actionsRow}>
-          <TouchableOpacity
-            style={styles.detailsBtn}
-            onPress={() =>
-              router.navigate({
-                pathname: "/shipment-details",
-                params: { bookingNumber: order.booking_number },
-              })
-            }
-            activeOpacity={0.8}
-          >
-            <Text style={styles.detailsBtnText}>Details</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.trackBtn}
-            onPress={() =>
-              router.navigate({
-                pathname: "/tracking",
-                params: { orderId: order.order_id },
-              })
-            }
-            activeOpacity={0.8}
-          >
-            <Ionicons name="location-outline" size={16} color="#fff" />
-            <Text style={styles.trackBtnText}>Track</Text>
-          </TouchableOpacity>
+          )}
         </View>
+      </TouchableOpacity>
+
+      {expanded && (
+        <Animated.View
+          entering={FadeIn.duration(260)}
+          exiting={FadeOut.duration(160)}
+          style={styles.itemsBlock}
+        >
+          {order.items.map((item, i) => {
+            const ist = statusStyle(item.status);
+            return (
+              <Animated.View
+                key={item.order_item_id}
+                entering={FadeInDown.duration(260).delay(i * 50)}
+                style={styles.itemRow}
+              >
+                <View style={[styles.itemDot, { backgroundColor: ist.dot }]} />
+                <View style={{ flex: 1 }}>
+                  <TouchableOpacity
+                    style={styles.itemRefRow}
+                    onPress={() => item.tracking_id && onCopy(item.tracking_id)}
+                    hitSlop={8}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={styles.itemRef} numberOfLines={1}>
+                      {item.tracking_id ?? "—"}
+                    </Text>
+                    <Ionicons
+                      name={
+                        copiedRef === item.tracking_id
+                          ? "checkmark"
+                          : "copy-outline"
+                      }
+                      size={12}
+                      color={
+                        copiedRef === item.tracking_id
+                          ? colors.primary
+                          : colors.lightText
+                      }
+                    />
+                  </TouchableOpacity>
+                  <Text style={styles.itemSub}>
+                    {item.boxes} boxes · {item.weight} kg
+                  </Text>
+                </View>
+                <Text
+                  style={[styles.itemStatus, { color: ist.text }]}
+                  numberOfLines={1}
+                >
+                  {item.status ?? "Pending"}
+                </Text>
+              </Animated.View>
+            );
+          })}
+        </Animated.View>
+      )}
+
+      <View style={styles.actionsRow}>
+        <TouchableOpacity
+          style={styles.expandBtn}
+          onPress={onToggle}
+          hitSlop={8}
+        >
+          <Text style={styles.expandText}>
+            {expanded ? "Hide items" : "View items"}
+          </Text>
+          <Ionicons
+            name={expanded ? "chevron-up" : "chevron-down"}
+            size={14}
+            color={colors.textSecondary}
+          />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }} />
+        <TouchableOpacity
+          style={styles.detailsBtn}
+          onPress={() =>
+            router.navigate({
+              pathname: "/shipment-details",
+              params: { bookingNumber: order.booking_number },
+            })
+          }
+          activeOpacity={0.8}
+        >
+          <Text style={styles.detailsBtnText}>{tr("Details")}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.trackBtn}
+          onPress={() =>
+            router.navigate({
+              pathname: "/tracking",
+              params: { orderId: order.order_id },
+            })
+          }
+          activeOpacity={0.85}
+        >
+          <Ionicons name="navigate" size={14} color="#fff" />
+          <Text style={styles.trackBtnText}>{tr("Track")}</Text>
+        </TouchableOpacity>
       </View>
     </Animated.View>
   );
 }
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
 ) =>
   StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
+    container: { flex: 1, backgroundColor: colors.surface },
     searchRow: {
       flexDirection: "row",
       alignItems: "center",
       marginHorizontal: 20,
-      marginTop: 10,
+      marginTop: 22,
       marginBottom: 4,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderRadius: 14,
-      backgroundColor: "#F5F6F8",
-      borderWidth: 1,
-      borderColor: colors.borderColor,
-      gap: 8,
+      paddingHorizontal: 16,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: colors.surface,
+      gap: 10,
     },
     searchInput: {
       flex: 1,
-      fontFamily: fonts.regular,
+      fontFamily: fonts.medium,
       fontSize: fontSize.sm,
-      color: colors.text,
+      color: colors.ink,
       padding: 0,
     },
     listContent: {
-      paddingHorizontal: 16,
-      paddingTop: 12,
-      paddingBottom: 30,
-      gap: 10,
+      paddingHorizontal: 20,
+      paddingTop: 8,
+      paddingBottom: 40,
     },
     card: {
-      backgroundColor: colors.background,
-      borderRadius: 16,
-      padding: 14,
-      borderWidth: 1,
-      borderColor: colors.borderColor,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 8,
-      elevation: 2,
+      paddingVertical: 18,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
     },
     cardHeaderRow: {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
-      marginBottom: 4,
+      gap: 10,
+      marginBottom: 12,
     },
     cardTitle: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.md,
-      color: colors.text,
+      flexShrink: 1,
+      fontFamily: fonts.bold,
+      fontSize: fontSize.lg,
+      color: colors.ink,
+      letterSpacing: ls(-0.3),
     },
-    routeRow: {
+    statusRow: {
       flexDirection: "row",
       alignItems: "center",
-      marginBottom: 8,
-      flexWrap: "wrap",
+      gap: 6,
+      maxWidth: "50%",
     },
+    statusDot: { width: 7, height: 7, borderRadius: 4 },
+    chipText: { fontFamily: fonts.semiBold, fontSize: fontSize.xs },
+    route: {
+      flexDirection: "row",
+      gap: 12,
+      marginBottom: 12,
+    },
+    routeRail: {
+      alignItems: "center",
+      paddingVertical: 5,
+    },
+    node: { width: 8, height: 8, borderRadius: 4 },
+    nodeLine: {
+      flex: 1,
+      width: 1.5,
+      backgroundColor: colors.borderColor,
+      marginVertical: 3,
+    },
+    routeTexts: { flex: 1, gap: 10 },
     routeText: {
       fontFamily: fonts.medium,
       fontSize: fontSize.sm,
-      color: colors.textSecondary,
+      color: colors.ink,
     },
     metaRow: {
       flexDirection: "row",
       flexWrap: "wrap",
-      columnGap: 14,
-      rowGap: 4,
-      marginVertical: 8,
+      columnGap: 16,
+      rowGap: 6,
     },
-    metaItem: { flexDirection: "row", alignItems: "center", gap: 4 },
+    metaItem: { flexDirection: "row", alignItems: "center", gap: 5 },
     metaText: {
-      fontFamily: fonts.regular,
-      fontSize: fontSize.xs ?? 11,
-      color: colors.textSecondary,
-    },
-    cardChip: {
-      flexDirection: "row",
-      alignItems: "center",
-      alignSelf: "flex-start",
-      borderRadius: 20,
-      paddingHorizontal: 10,
-      paddingVertical: 5,
-      gap: 5,
-    },
-    statusDot: { width: 6, height: 6, borderRadius: 3 },
-    chipText: { fontFamily: fonts.semiBold, fontSize: fontSize.xs ?? 11 },
-    expandRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 4,
-      paddingTop: 6,
-      borderTopWidth: 1,
-      borderTopColor: colors.borderColor,
-    },
-    expandText: {
-      fontFamily: fonts.medium ?? fonts.regular,
-      fontSize: fontSize.xs ?? 11,
+      fontFamily: fonts.medium,
+      fontSize: fontSize.xs,
       color: colors.textSecondary,
     },
     itemsBlock: {
-      marginTop: 8,
-      gap: 6,
+      marginTop: 14,
+      paddingLeft: 4,
+      gap: 12,
     },
     itemRow: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
-      backgroundColor: "#F8F9FA",
-      borderRadius: 10,
-      paddingHorizontal: 10,
-      paddingVertical: 8,
-      gap: 8,
+      gap: 12,
     },
-    itemRef: {
-      fontFamily: fonts.medium ?? fonts.regular,
-      fontSize: fontSize.xs ?? 11,
-      color: colors.text,
-    },
+    itemDot: { width: 8, height: 8, borderRadius: 4 },
     itemRefRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 5,
+      gap: 6,
+    },
+    itemRef: {
+      fontFamily: fonts.semiBold,
+      fontSize: fontSize.sm,
+      color: colors.ink,
     },
     itemSub: {
       fontFamily: fonts.regular,
-      fontSize: fontSize.xs ?? 10,
+      fontSize: fontSize.xs,
       color: colors.textSecondary,
-      marginTop: 1,
+      marginTop: 2,
     },
-    itemChip: {
-      borderRadius: 20,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
+    itemStatus: {
+      fontFamily: fonts.semiBold,
+      fontSize: fontSize.xs,
+      maxWidth: "36%",
     },
-    itemChipText: { fontFamily: fonts.semiBold, fontSize: 10 },
     actionsRow: {
       flexDirection: "row",
-      gap: 10,
-      paddingTop: 12,
-      marginTop: 10,
-      borderTopWidth: 1,
-      borderTopColor: colors.borderColor,
+      alignItems: "center",
+      gap: 8,
+      marginTop: 16,
+    },
+    expandBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+    },
+    expandText: {
+      fontFamily: fonts.medium,
+      fontSize: fontSize.xs,
+      color: colors.textSecondary,
     },
     detailsBtn: {
-      flex: 1,
-      paddingVertical: 10,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.borderColor,
+      paddingHorizontal: 18,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: colors.surface,
       alignItems: "center",
       justifyContent: "center",
     },
     detailsBtnText: {
       fontFamily: fonts.semiBold,
       fontSize: fontSize.sm,
-      color: colors.text,
+      color: colors.ink,
     },
     trackBtn: {
-      flex: 1,
       flexDirection: "row",
       gap: 6,
-      paddingVertical: 10,
-      borderRadius: 10,
+      paddingHorizontal: 18,
+      height: 38,
+      borderRadius: 19,
       backgroundColor: colors.secondary,
       alignItems: "center",
       justifyContent: "center",
@@ -580,29 +600,6 @@ const createStyles = (
     trackBtnText: {
       fontFamily: fonts.semiBold,
       fontSize: fontSize.sm,
-      color: colors.background,
-    },
-    emptyState: {
-      alignItems: "center",
-      justifyContent: "center",
-      paddingTop: 80,
-      gap: 10,
-    },
-    emptyText: {
-      fontFamily: fonts.regular,
-      fontSize: fontSize.sm,
-      color: colors.textSecondary,
-    },
-    retryBtn: {
-      marginTop: 10,
-      paddingHorizontal: 20,
-      paddingVertical: 10,
-      borderRadius: 10,
-      backgroundColor: colors.secondary,
-    },
-    retryBtnText: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.sm,
-      color: colors.background,
+      color: "#fff",
     },
   });

@@ -1,20 +1,16 @@
+import { tr } from "@/i18n";
 import { api } from "@/api";
-import Header from "@/components/ui/Header";
+import Header, { useSheetStyle } from "@/components/ui/Header";
+import { PillTabs } from "@/components/ui/PillTabs";
+import { StateView } from "@/components/ui/StateView";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
-import Ionicons from "@react-native-vector-icons/ionicons";
 import { router, useFocusEffect } from "expo-router";
 import moment from "moment";
 import { useCallback, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  FlatList,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Text } from "@/components/ui/Text";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type InvoiceStatus = "paid" | "unpaid";
@@ -33,6 +29,7 @@ interface InvoiceItem {
 
 interface InvoiceRow {
   id: number | string;
+  public_ref: string;
   invoice_id: string;
   invoice_type: string;
   amount: number | string;
@@ -44,9 +41,9 @@ interface InvoiceRow {
 }
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: "all", label: "ALL" },
-  { key: "paid", label: "PAID" },
-  { key: "unpaid", label: "UNPAID" },
+  { key: "all", label: "All" },
+  { key: "paid", label: "Paid" },
+  { key: "unpaid", label: "Unpaid" },
 ];
 
 function mapInvoiceRow(row: InvoiceRow): InvoiceItem {
@@ -57,7 +54,7 @@ function mapInvoiceRow(row: InvoiceRow): InvoiceItem {
       : "unpaid";
 
   return {
-    id: String(row.id),
+    id: row.public_ref,
     invoiceNumber: row.invoice_id,
     invoiceType: row.invoice_type ?? "",
     shipmentRef: row.shipment_id ?? "",
@@ -91,6 +88,7 @@ async function fetchInvoices(
 export default function Invoices() {
   const { colors, fontSize, fonts } = useAppTheme();
   const styles = createStyles(colors, fontSize, fonts);
+  const sheet = useSheetStyle();
   const { user } = useAuth();
 
   const [invoices, setInvoices] = useState<InvoiceItem[]>([]);
@@ -143,396 +141,222 @@ export default function Invoices() {
     return { unpaidCount: unpaid.length, unpaidAmount };
   }, [invoices]);
 
-  const renderItem = ({ item }: { item: InvoiceItem }) => {
+  const tabsWithCount = useMemo(
+    () =>
+      TABS.map((t) => ({
+        ...t,
+        count:
+          t.key === "all"
+            ? invoices.length
+            : invoices.filter((i) => i.status === t.key).length,
+      })),
+    [invoices],
+  );
+
+  const renderItem = ({
+    item,
+    index,
+  }: {
+    item: InvoiceItem;
+    index: number;
+  }) => {
     const isPaid = item.status === "paid";
     const isPaying = payingId === item.id;
 
     return (
-      <View style={styles.card}>
-        <View style={styles.cardTopRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>{item.invoiceNumber}</Text>
-            <View style={styles.typeRow}>
-              {!!item.invoiceType && (
-                <View style={styles.typeChip}>
-                  <Text style={styles.typeChipText}>{item.invoiceType}</Text>
-                </View>
-              )}
-              {!!item.shipmentRef && (
-                <Text style={styles.cardText} numberOfLines={1}>
-                  {item.shipmentRef}
-                </Text>
-              )}
-            </View>
-          </View>
-          <View
-            style={[
-              styles.statusChip,
-              isPaid
-                ? { backgroundColor: "#E8F5E9" }
-                : { backgroundColor: "#FFF3E0" },
-            ]}
-          >
-            <View
-              style={[
-                styles.statusDot,
-                { backgroundColor: isPaid ? "#16803C" : "#B4690E" },
-              ]}
-            />
-            <Text
-              style={[
-                styles.chipText,
-                { color: isPaid ? "#16803C" : "#B4690E" },
-              ]}
-            >
-              {isPaid ? "Paid" : "Unpaid"}
-            </Text>
-          </View>
+      <Animated.View
+        entering={FadeInDown.duration(320).delay(Math.min(index, 7) * 45)}
+        style={styles.row}
+      >
+        <View style={styles.rowMain}>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {item.invoiceNumber}
+          </Text>
+          <Text style={styles.cardText} numberOfLines={1}>
+            {[item.invoiceType, item.shipmentRef]
+              .filter(Boolean)
+              .join("  ·  ") || "Invoice"}
+          </Text>
+          <Text style={styles.dateText}>
+            Due {moment(item.date).format("D MMM YYYY")}
+          </Text>
         </View>
 
-        <View style={styles.divider} />
-
-        <View style={styles.cardBottomRow}>
-          <View>
-            <Text style={styles.metaLabel}>Date</Text>
-            <View style={styles.dateRow}>
-              <Ionicons
-                name="calendar-outline"
-                size={13}
-                color={colors.textSecondary}
+        <View style={styles.rowSide}>
+          <Text style={styles.cardPrice}>
+            {item.currency} {item.amount.toLocaleString()}
+          </Text>
+          {isPaid ? (
+            <View style={styles.paidRow}>
+              <View
+                style={[styles.statusDot, { backgroundColor: colors.success }]}
               />
-              <Text style={styles.dateText}>
-                {moment(item.date).format("MMM D, YYYY")}
+              <Text style={[styles.chipText, { color: colors.success }]}>
+                {tr("Paid")}
               </Text>
             </View>
-          </View>
-
-          <View style={{ alignItems: "flex-end" }}>
-            <Text style={styles.metaLabel}>Amount</Text>
-            <Text style={styles.cardPrice}>
-              {item.currency} {item.amount.toLocaleString()}
-            </Text>
-          </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.payBtn}
+              activeOpacity={0.85}
+              onPress={() =>
+                router.navigate({
+                  pathname: "/pay-invoice",
+                  params: { invoiceId: item.id },
+                })
+              }
+              disabled={isPaying}
+            >
+              {isPaying ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.payBtnText}>{tr("Pay now")}</Text>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
-
-        {!isPaid && (
-          <TouchableOpacity
-            style={styles.payBtn}
-            activeOpacity={0.85}
-            onPress={() =>
-              router.navigate({
-                pathname: "/pay-invoice",
-                params: { invoiceId: item.id },
-              })
-            }
-            disabled={isPaying}
-          >
-            {isPaying ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="card-outline" size={16} color="#fff" />
-                <Text style={styles.payBtnText}>Pay Now</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
-      </View>
+      </Animated.View>
     );
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <Header
         name="Invoices"
-        description="Track you all invoices"
+        description={
+          totals.unpaidCount > 0
+            ? tr(totals.unpaidCount > 1 ? "AED {amount} waiting across {n} invoices" : "AED {amount} waiting across {n} invoice", { amount: totals.unpaidAmount.toLocaleString(), n: totals.unpaidCount })
+            : "Every bill and payment in one place"
+        }
         icon="receipt"
       />
 
-      {totals.unpaidCount > 0 && (
-        <View style={styles.summaryBar}>
-          <Ionicons name="alert-circle-outline" size={16} color="#B4690E" />
-          <Text style={styles.summaryText}>
-            {totals.unpaidCount} unpaid invoice
-            {totals.unpaidCount > 1 ? "s" : ""} · AED{" "}
-            {totals.unpaidAmount.toLocaleString()} due
-          </Text>
-        </View>
-      )}
-
-      <View style={styles.tabRow}>
-        {TABS.map((tab) => {
-          const isActive = tab.key === activeTab;
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              style={styles.tabItem}
-              activeOpacity={0.7}
-              onPress={() => setActiveTab(tab.key)}
-            >
-              <Text
-                style={[
-                  styles.tabLabel,
-                  isActive && {
-                    color: colors.primary,
-                    fontFamily: fonts.semiBold,
-                  },
-                ]}
-              >
-                {tab.label}
-              </Text>
-              {isActive && <View style={styles.tabIndicator} />}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {loading ? (
-        <View style={styles.centerState}>
-          <ActivityIndicator size="small" color={colors.primary} />
-        </View>
-      ) : error ? (
-        <View style={styles.centerState}>
-          <Text style={styles.emptyText}>{error}</Text>
-          <TouchableOpacity
-            onPress={() => loadInvoices()}
-            style={styles.retryBtn}
-          >
-            <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      ) : filteredInvoices.length === 0 ? (
-        <View style={styles.centerState}>
-          <Ionicons
-            name="file-tray-outline"
-            size={36}
-            color={colors.textSecondary}
+      <View style={sheet}>
+        <View style={styles.tabsWrap}>
+          <PillTabs
+            tabs={tabsWithCount}
+            active={activeTab}
+            onChange={setActiveTab}
           />
-          <Text style={styles.emptyText}>
-            No {activeTab === "all" ? "" : activeTab} invoices found
-          </Text>
         </View>
-      ) : (
-        <FlatList
-          data={filteredInvoices}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              tintColor={colors.primary}
-            />
-          }
-        />
-      )}
+
+        {loading ? (
+          <StateView loading />
+        ) : error ? (
+          <StateView
+            icon="cloud-offline-outline"
+            label={error}
+            actionLabel={tr("Retry")}
+            onAction={() => loadInvoices()}
+          />
+        ) : filteredInvoices.length === 0 ? (
+          <StateView
+            icon="receipt-outline"
+            label={activeTab === "all" ? tr("No invoices found") : activeTab === "paid" ? tr("No paid invoices found") : tr("No unpaid invoices found")}
+          />
+        ) : (
+          <FlatList
+            data={filteredInvoices}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                tintColor={colors.primary}
+              />
+            }
+          />
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
 ) =>
   StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: colors.background,
+      backgroundColor: colors.surface,
     },
-    summaryBar: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      marginHorizontal: 16,
-      marginTop: 10,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 10,
-      backgroundColor: "#FFF3E0",
-    },
-    summaryText: {
-      fontFamily: fonts.medium ?? fonts.regular,
-      fontSize: fontSize.xs ?? 12,
-      color: "#B4690E",
-    },
-    tabRow: {
-      flexDirection: "row",
-      marginTop: 12,
-      borderBottomWidth: 1,
-      borderColor: colors.borderColor,
-    },
-    tabItem: {
-      flex: 1,
-      alignItems: "center",
-      paddingVertical: 14,
-    },
-    tabLabel: {
-      fontFamily: fonts.medium,
-      fontSize: fontSize.sm,
-      color: colors.textSecondary,
-      letterSpacing: 0.3,
-    },
-    tabIndicator: {
-      marginTop: 8,
-      height: 2,
-      width: "60%",
-      borderRadius: 1,
-      backgroundColor: colors.primary,
-      position: "absolute",
-      bottom: -1,
-    },
-    centerState: {
-      flex: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      paddingHorizontal: 30,
-    },
-    emptyText: {
-      fontFamily: fonts.regular,
-      fontSize: fontSize.sm,
-      color: colors.textSecondary,
-      textAlign: "center",
-    },
-    retryBtn: {
-      marginTop: 8,
-      paddingHorizontal: 16,
-      paddingVertical: 8,
-      borderRadius: 8,
-      backgroundColor: colors.primary,
-    },
-    retryText: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.sm,
-      color: "#fff",
+    tabsWrap: {
+      paddingHorizontal: 20,
+      paddingTop: 22,
+      paddingBottom: 6,
     },
     listContent: {
-      paddingHorizontal: 16,
-      paddingTop: 14,
-      paddingBottom: 24,
-      gap: 12,
+      paddingHorizontal: 20,
+      paddingTop: 6,
+      paddingBottom: 40,
     },
-    card: {
-      backgroundColor: colors.background,
-      borderRadius: 16,
-      padding: 16,
-      borderWidth: 1,
-      borderColor: colors.borderColor,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 8,
-      elevation: 2,
-    },
-    cardTopRow: {
+    row: {
       flexDirection: "row",
-      alignItems: "flex-start",
-      gap: 10,
-    },
-    iconBubble: {
-      width: 34,
-      height: 34,
-      borderRadius: 10,
-      backgroundColor: `${colors.primary}1A`,
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent: "space-between",
+      gap: 12,
+      paddingVertical: 16,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    rowMain: {
+      flex: 1,
+    },
+    rowSide: {
+      alignItems: "flex-end",
+      gap: 8,
     },
     cardTitle: {
-      fontFamily: fonts.semiBold,
+      fontFamily: fonts.bold,
       fontSize: fontSize.md,
-      color: colors.text,
-      marginBottom: 2,
+      color: colors.ink,
     },
     cardText: {
       fontFamily: fonts.regular,
-      fontSize: fontSize.sm,
+      fontSize: fontSize.xs,
       color: colors.textSecondary,
-      flexShrink: 1,
+      marginTop: 3,
+      textTransform: "capitalize",
     },
-    typeRow: {
+    dateText: {
+      fontFamily: fonts.regular,
+      fontSize: fontSize.xs,
+      color: colors.lightText,
+      marginTop: 2,
+    },
+    cardPrice: {
+      fontFamily: fonts.bold,
+      fontSize: fontSize.md,
+      color: colors.ink,
+    },
+    paidRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
-      marginTop: 2,
-    },
-    typeChip: {
-      borderRadius: 6,
-      paddingHorizontal: 7,
-      paddingVertical: 2,
-      backgroundColor: `${colors.primary}1A`,
-    },
-    typeChipText: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.xs ?? 11,
-      color: colors.primary,
-      textTransform: "capitalize",
-    },
-    divider: {
-      height: 1,
-      backgroundColor: colors.borderColor,
-      marginVertical: 12,
-    },
-    cardBottomRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "flex-end",
-    },
-    metaLabel: {
-      fontFamily: fonts.regular,
-      fontSize: fontSize.xs ?? 11,
-      color: colors.textSecondary,
-      marginBottom: 3,
-      textTransform: "uppercase",
-      letterSpacing: 0.3,
-    },
-    dateRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 5,
-    },
-    dateText: {
-      fontFamily: fonts.medium ?? fonts.regular,
-      fontSize: fontSize.sm,
-      color: colors.text,
-    },
-    cardPrice: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.lg,
-      color: colors.primary,
-    },
-    statusChip: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 5,
-      borderRadius: 20,
-      paddingHorizontal: 10,
-      paddingVertical: 5,
     },
     statusDot: {
-      width: 6,
-      height: 6,
-      borderRadius: 3,
+      width: 7,
+      height: 7,
+      borderRadius: 4,
     },
     chipText: {
       fontFamily: fonts.semiBold,
-      fontSize: fontSize.xs ?? 11,
+      fontSize: fontSize.xs,
     },
     payBtn: {
-      flexDirection: "row",
+      paddingHorizontal: 16,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: colors.secondary,
       alignItems: "center",
       justifyContent: "center",
-      gap: 6,
-      marginTop: 14,
-      paddingVertical: 11,
-      borderRadius: 10,
-      backgroundColor: colors.secondary,
     },
     payBtnText: {
       fontFamily: fonts.semiBold,
-      fontSize: fontSize.sm,
+      fontSize: fontSize.xs,
       color: "#fff",
     },
   });

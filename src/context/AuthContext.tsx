@@ -1,4 +1,9 @@
 import { api, REFRESH_TOKEN_KEY, setOnAuthFailure, TOKEN_KEY } from "@/api";
+import {
+  canAccess,
+  type AccountType,
+  type Feature,
+} from "@/constants/permissions";
 import { router } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import {
@@ -17,7 +22,7 @@ interface User {
   fullName: string;
   email: string;
   status: string;
-  type: string;
+  type: AccountType | "";
 }
 
 interface LoginCredentials {
@@ -29,7 +34,7 @@ interface SignupCredentials {
   email: string;
   phone: string;
   password: string;
-  accountType: "receiver" | "shipper";
+  accountType: AccountType;
 }
 
 interface AuthContextType {
@@ -41,6 +46,7 @@ interface AuthContextType {
   signup: (credentials: SignupCredentials) => Promise<boolean>;
   logout: () => Promise<void>;
   loadSession: () => Promise<void>;
+  can: (feature: Feature) => boolean;
 }
 
 interface AuthProviderProps {
@@ -64,6 +70,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<User>(initialUser);
 
   const [loading, setLoading] = useState(true);
+
+  const can = useCallback(
+    (feature: Feature) => !!user.id && canAccess(user.type, feature),
+    [user.id, user.type],
+  );
 
   const loadSession = useCallback(async (): Promise<void> => {
     try {
@@ -280,7 +291,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   const logout = async (): Promise<void> => {
     try {
-      await api.post("/auth/logout");
+      const refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
+      await api.post("/auth/logout", { refreshToken });
     } catch (error: any) {
       console.warn(
         "[Logout] API failed:",
@@ -288,6 +300,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       );
     } finally {
       await SecureStore.deleteItemAsync(TOKEN_KEY);
+      await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
       setUser(initialUser);
       Toast.show({
         type: "success",
@@ -309,6 +322,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         signup,
         logout,
         loadSession,
+        can,
       }}
     >
       {children}

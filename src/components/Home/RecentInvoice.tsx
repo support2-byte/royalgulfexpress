@@ -1,18 +1,12 @@
+import { tr } from "@/i18n";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { RecentInvoice } from "@/types/home";
 import { router } from "expo-router";
 import moment from "moment";
 import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, TouchableOpacity, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import Animated, { FadeInDown } from "react-native-reanimated";
-
-interface RecentInvoice {
-  id: number;
-  invoice_id: string;
-  created_at: string;
-  due_at: string | null;
-  status: "paid" | "unpaid" | string;
-  amount: number;
-}
 
 interface Props {
   invoice: RecentInvoice;
@@ -25,10 +19,10 @@ export const RecentInvoiceCard: React.FC<Props> = ({ invoice, index }) => {
 
   const isPaid = (invoice.status || "").toLowerCase() === "paid";
   const issuedLabel = invoice.created_at
-    ? moment(invoice.created_at).format("DD-MMM-YYYY")
+    ? moment(invoice.created_at).format("D MMM YYYY")
     : "—";
   const dueLabel = invoice.due_at
-    ? moment(invoice.due_at).format("DD-MMM-YYYY")
+    ? moment(invoice.due_at).format("D MMM YYYY")
     : "—";
   const amount =
     typeof invoice.amount === "number"
@@ -36,29 +30,29 @@ export const RecentInvoiceCard: React.FC<Props> = ({ invoice, index }) => {
       : Number(invoice.amount) || 0;
 
   return (
-    <Animated.View entering={FadeInDown.duration(400).delay(240 + index * 70)}>
-      <View style={styles.card}>
-        <View style={styles.topRow}>
-          <Text style={styles.invoiceId}>{invoice.invoice_id ?? "—"}</Text>
-          <View
-            style={[
-              styles.statusPill,
-              { backgroundColor: isPaid ? colors.primary : "#0d6c6a" },
-            ]}
-          >
-            <Text style={styles.statusText}>{isPaid ? "PAID" : "UNPAID"}</Text>
+    <Animated.View
+      entering={FadeInDown.duration(320).delay(Math.min(index, 6) * 45)}
+      style={styles.row}
+    >
+      <View style={styles.main}>
+        <Text style={styles.invoiceId} numberOfLines={1}>
+          {invoice.invoice_id ?? "—"}
+        </Text>
+        <Text style={styles.meta}>Issued {issuedLabel}</Text>
+        <Text style={styles.meta}>Due {dueLabel}</Text>
+      </View>
+
+      <View style={styles.side}>
+        <Text style={styles.amount}>AED {amount.toLocaleString()}</Text>
+        {isPaid ? (
+          <View style={styles.paidRow}>
+            <View style={[styles.dot, { backgroundColor: colors.success }]} />
+            <Text style={[styles.status, { color: colors.success }]}>{tr("Paid")}</Text>
           </View>
-        </View>
-        <View style={styles.bottomRow}>
-          <View>
-            <Text style={styles.dateText}>Issued Date: {issuedLabel}</Text>
-            <Text style={styles.dateText}>Due Date: {dueLabel}</Text>
-          </View>
-          <Text style={styles.amount}>AED {amount.toLocaleString()}</Text>
-        </View>
-        {!isPaid && (
+        ) : (
           <TouchableOpacity
             style={styles.payButton}
+            activeOpacity={0.8}
             onPress={() =>
               router.navigate({
                 pathname: "/pay-invoice",
@@ -66,7 +60,7 @@ export const RecentInvoiceCard: React.FC<Props> = ({ invoice, index }) => {
               })
             }
           >
-            <Text style={styles.payButtonText}>Pay Now</Text>
+            <Text style={styles.payButtonText}>{tr("Pay now")}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -75,69 +69,65 @@ export const RecentInvoiceCard: React.FC<Props> = ({ invoice, index }) => {
 };
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
 ) =>
   StyleSheet.create({
-    card: {
-      padding: 14,
-      borderRadius: 14,
-      backgroundColor: colors.lightGrey,
-      marginBottom: 10,
-      shadowColor: colors.text,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 8,
-      elevation: 2,
-    },
-    topRow: {
+    row: {
       flexDirection: "row",
-      justifyContent: "space-between",
       alignItems: "center",
-      marginBottom: 6,
+      justifyContent: "space-between",
+      paddingVertical: 15,
+      gap: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    main: {
+      flex: 1,
     },
     invoiceId: {
-      fontSize: fontSize.sm,
+      fontSize: fontSize.md,
       fontFamily: fonts.bold,
-      color: colors.text,
+      color: colors.ink,
+      marginBottom: 3,
     },
-    statusPill: {
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: 20,
-    },
-    statusText: {
-      fontSize: fontSize.xs ?? 10,
-      fontFamily: fonts.semiBold,
-      color: colors.background,
-    },
-    bottomRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "flex-end",
-    },
-    dateText: {
-      fontSize: fontSize.xs ?? fontSize.sm,
+    meta: {
+      fontSize: fontSize.xs,
       fontFamily: fonts.regular,
       color: colors.textSecondary,
       marginTop: 1,
     },
+    side: {
+      alignItems: "flex-end",
+      gap: 8,
+    },
     amount: {
       fontSize: fontSize.md,
       fontFamily: fonts.bold,
-      color: colors.secondary,
+      color: colors.ink,
+    },
+    paidRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    dot: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+    },
+    status: {
+      fontSize: fontSize.xs,
+      fontFamily: fonts.semiBold,
     },
     payButton: {
-      marginTop: 10,
-      paddingVertical: 8,
-      borderRadius: 10,
-      backgroundColor: colors.primary,
-      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingVertical: 7,
+      borderRadius: 20,
+      backgroundColor: colors.secondary,
     },
     payButtonText: {
-      fontSize: fontSize.sm,
+      fontSize: fontSize.xs,
       fontFamily: fonts.semiBold,
-      color: colors.background,
+      color: "#fff",
     },
   });

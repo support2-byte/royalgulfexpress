@@ -1,20 +1,14 @@
+import { ls, tr } from "@/i18n";
 import { api } from "@/api";
-import Header from "@/components/ui/Header";
+import Header, { useSheetStyle } from "@/components/ui/Header";
+import { StateView } from "@/components/ui/StateView";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import Ionicons from "@react-native-vector-icons/ionicons";
+import { useFeatureGuard } from "@/hooks/useFeatureGuard";
 import { useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Image,
-  Linking,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Image, Linking, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
@@ -32,6 +26,7 @@ interface GatepassRow {
   mimetype: string;
   uploaded_at: string;
   item_ref: string | null;
+  item_tracking_id: string | null;
   category: string | null;
   subcategory: string | null;
   status: string | null;
@@ -54,6 +49,7 @@ interface CollectionGroup {
   };
   items: {
     item_ref: string;
+    tracking_id: string | null;
     category: string | null;
     subcategory: string | null;
     status: string | null;
@@ -87,6 +83,7 @@ function groupByCollection(rows: GatepassRow[]): CollectionGroup[] {
       if (!group.items.some((i) => i.item_ref === row.item_ref)) {
         group.items.push({
           item_ref: row.item_ref,
+          tracking_id: row.item_tracking_id,
           category: row.category,
           subcategory: row.subcategory,
           status: row.status,
@@ -127,10 +124,11 @@ function statusColor(status: string | null, colors: any) {
 }
 
 export default function GatepassHistory() {
+  useFeatureGuard("gatepass");
   const { user } = useAuth();
   const { colors, fontSize, fonts } = useAppTheme();
   const styles = createStyles(colors, fontSize, fonts);
-
+  const sheet = useSheetStyle();
   const id = user?.customer_id;
 
   const [rows, setRows] = useState<GatepassRow[]>([]);
@@ -150,7 +148,7 @@ export default function GatepassHistory() {
         if (!result?.success) {
           Toast.show({
             type: "error",
-            text1: "Failed to load gatepasses",
+            text1: tr("Failed to load gatepasses"),
             text2: result?.message || "Something went wrong.",
           });
           return;
@@ -160,7 +158,7 @@ export default function GatepassHistory() {
       } catch (error: any) {
         Toast.show({
           type: "error",
-          text1: "Failed to load gatepasses",
+          text1: tr("Failed to load gatepasses"),
           text2:
             error?.response?.data?.message ||
             error?.message ||
@@ -175,41 +173,36 @@ export default function GatepassHistory() {
   }, [id]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <Header
-        name="Gatepass History"
-        description="View all your past gatepasses"
+        name="Gatepass history"
+        description={tr("Every gatepass issued for your collections")}
         icon="document-text"
       />
 
-      {loading ? (
-        <ActivityIndicator style={{ marginTop: 40 }} color={colors.text} />
-      ) : groups.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons
-            name="document-text-outline"
-            size={40}
-            color={colors.textSecondary}
-          />
-          <Text style={styles.emptyText}>No gatepasses yet</Text>
-        </View>
-      ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.bodyContainer}
-        >
-          {groups.map((group, index) => (
-            <CollectionCard
-              key={group.collection_id}
-              group={group}
-              index={index}
-              styles={styles}
-              colors={colors}
-              onPreview={setPreviewUrl}
-            />
-          ))}
-        </ScrollView>
-      )}
+      <View style={sheet}>
+        {loading ? (
+          <StateView loading />
+        ) : groups.length === 0 ? (
+          <StateView icon="document-text-outline" label="No gatepasses yet" />
+        ) : (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.bodyContainer}
+          >
+            {groups.map((group, index) => (
+              <CollectionCard
+                key={group.collection_id}
+                group={group}
+                index={index}
+                styles={styles}
+                colors={colors}
+                onPreview={setPreviewUrl}
+              />
+            ))}
+          </ScrollView>
+        )}
+      </View>
 
       <Modal
         visible={!!previewUrl}
@@ -238,7 +231,7 @@ export default function GatepassHistory() {
               style={styles.modalOpenExternal}
               onPress={() => Linking.openURL(previewUrl)}
             >
-              <Text style={styles.modalOpenExternalText}>Open in browser</Text>
+              <Text style={styles.modalOpenExternalText}>{tr("Open in browser")}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -264,12 +257,14 @@ function CollectionCard({
 
   return (
     <Animated.View
-      entering={FadeInDown.duration(350).delay(index * 80)}
+      entering={FadeInDown.duration(340).delay(Math.min(index, 6) * 70)}
       style={styles.card}
     >
       <View style={styles.cardHeaderRow}>
-        <View>
-          <Text style={styles.orderId}>Order {group.rgl_booking_number}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.orderId} numberOfLines={1}>
+            {group.rgl_booking_number}
+          </Text>
           <View style={styles.methodRow}>
             <Ionicons
               name={
@@ -277,7 +272,7 @@ function CollectionCard({
                   ? "walk-outline"
                   : "car-outline"
               }
-              size={13}
+              size={14}
               color={colors.textSecondary}
             />
             <Text style={styles.methodText}>
@@ -307,14 +302,9 @@ function CollectionCard({
             activeOpacity={0.85}
             onPress={() => Linking.openURL(group.gatepass.url)}
           >
-            <Ionicons
-              name="document-text"
-              size={26}
-              color={colors.primary ?? "#0d6c6a"}
-            />
+            <Ionicons name="document-text" size={24} color={colors.primary} />
           </TouchableOpacity>
         )}
-
         <View style={styles.attachmentMeta}>
           <Text style={styles.attachmentName} numberOfLines={1}>
             {group.gatepass.originalname || "Gatepass document"}
@@ -323,48 +313,35 @@ function CollectionCard({
             Uploaded {formatDate(group.gatepass.uploaded_at)}
           </Text>
         </View>
-
         <TouchableOpacity
           style={styles.downloadBtn}
           onPress={() => Linking.openURL(group.gatepass.url)}
+          activeOpacity={0.8}
         >
-          <Ionicons
-            name="download-outline"
-            size={18}
-            color={colors.primary ?? "#0d6c6a"}
-          />
+          <Ionicons name="download-outline" size={18} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
-      {/* Items */}
       {group.items.length > 0 && (
         <View style={styles.itemsSection}>
-          {group.items.map((item) => (
-            <View key={item.item_ref} style={styles.itemRow}>
-              <View style={styles.itemLeft}>
-                <Text style={styles.itemCategory}>
-                  {item.category}
-                  {item.subcategory ? ` · ${item.subcategory}` : ""}
-                </Text>
-                <Text style={styles.itemRef}>{item.item_ref}</Text>
-              </View>
-              <View
-                style={[
-                  styles.statusPill,
-                  { borderColor: statusColor(item.status, colors) },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.statusPillText,
-                    { color: statusColor(item.status, colors) },
-                  ]}
-                >
+          {group.items.map((item) => {
+            const c = statusColor(item.status, colors);
+            return (
+              <View key={item.item_ref} style={styles.itemRow}>
+                <View style={[styles.itemDot, { backgroundColor: c }]} />
+                <View style={styles.itemLeft}>
+                  <Text style={styles.itemCategory} numberOfLines={1}>
+                    {item.category}
+                    {item.subcategory ? ` · ${item.subcategory}` : ""}
+                  </Text>
+                  <Text style={styles.itemRef}>{item.tracking_id ?? "—"}</Text>
+                </View>
+                <Text style={[styles.statusPillText, { color: c }]}>
                   {item.status || "—"}
                 </Text>
               </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       )}
     </Animated.View>
@@ -374,83 +351,63 @@ function CollectionCard({
 const THUMB_SIZE = 56;
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
 ) =>
   StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: colors.background,
+      backgroundColor: colors.surface,
     },
     bodyContainer: {
-      padding: 16,
+      paddingHorizontal: 20,
+      paddingTop: 12,
       paddingBottom: 40,
-      gap: 12,
-    },
-    emptyState: {
-      flex: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 10,
-      paddingBottom: 80,
-    },
-    emptyText: {
-      fontFamily: fonts.regular,
-      fontSize: fontSize.md,
-      color: colors.textSecondary,
     },
     card: {
-      borderRadius: 18,
-      padding: 16,
-      backgroundColor: colors.background,
-      shadowColor: "#000",
-      shadowOpacity: 0.05,
-      shadowRadius: 10,
-      shadowOffset: { width: 0, height: 4 },
-      elevation: 2,
+      paddingVertical: 20,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
     },
     cardHeaderRow: {
       flexDirection: "row",
       alignItems: "flex-start",
       justifyContent: "space-between",
+      gap: 12,
       marginBottom: 14,
     },
     orderId: {
-      fontFamily: fonts.semiBold,
+      fontFamily: fonts.bold,
       fontSize: fontSize.lg,
-      color: colors.text,
+      color: colors.ink,
+      letterSpacing: ls(-0.3),
       marginBottom: 3,
     },
     methodRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 4,
+      gap: 5,
     },
     methodText: {
-      fontFamily: fonts.regular,
+      fontFamily: fonts.medium,
       fontSize: fontSize.sm,
       color: colors.textSecondary,
       textTransform: "capitalize",
     },
     dateText: {
-      fontFamily: fonts.regular,
-      fontSize: fontSize.sm,
-      color: colors.textSecondary,
+      fontFamily: fonts.medium,
+      fontSize: fontSize.xs,
+      color: colors.lightText,
+      paddingTop: 4,
     },
     attachmentRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: 12,
-      padding: 10,
-      borderRadius: 14,
-      backgroundColor: (colors.primary ?? "#0d6c6a") + "0D",
-      marginBottom: 4,
     },
     thumbWrapper: {
       width: THUMB_SIZE,
       height: THUMB_SIZE,
-      borderRadius: 10,
+      borderRadius: 16,
       overflow: "hidden",
     },
     thumb: {
@@ -460,8 +417,8 @@ const createStyles = (
     fileIconBox: {
       width: THUMB_SIZE,
       height: THUMB_SIZE,
-      borderRadius: 10,
-      backgroundColor: colors.background,
+      borderRadius: 16,
+      backgroundColor: colors.surface,
       alignItems: "center",
       justifyContent: "center",
     },
@@ -470,34 +427,37 @@ const createStyles = (
     },
     attachmentName: {
       fontFamily: fonts.semiBold,
-      fontSize: fontSize.md,
-      color: colors.text,
+      fontSize: fontSize.sm,
+      color: colors.ink,
     },
     attachmentSub: {
       fontFamily: fonts.regular,
-      fontSize: fontSize.sm,
+      fontSize: fontSize.xs,
       color: colors.textSecondary,
       marginTop: 2,
     },
     downloadBtn: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
+      width: 40,
+      height: 40,
+      borderRadius: 20,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.background,
+      backgroundColor: colors.surface,
     },
     itemsSection: {
-      marginTop: 10,
-      borderTopWidth: 1,
-      borderTopColor: colors.borderColor,
-      paddingTop: 10,
-      gap: 8,
+      marginTop: 16,
+      gap: 12,
+      paddingLeft: 2,
     },
     itemRow: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
+      gap: 12,
+    },
+    itemDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
     },
     itemLeft: {
       flex: 1,
@@ -505,24 +465,18 @@ const createStyles = (
     itemCategory: {
       fontFamily: fonts.semiBold,
       fontSize: fontSize.sm,
-      color: colors.text,
+      color: colors.ink,
       textTransform: "capitalize",
     },
     itemRef: {
       fontFamily: fonts.regular,
-      fontSize: fontSize.xs ?? fontSize.sm,
+      fontSize: fontSize.xs,
       color: colors.textSecondary,
       marginTop: 1,
     },
-    statusPill: {
-      borderWidth: 1,
-      borderRadius: 20,
-      paddingHorizontal: 10,
-      paddingVertical: 3,
-    },
     statusPillText: {
       fontFamily: fonts.semiBold,
-      fontSize: fontSize.xs ?? fontSize.sm,
+      fontSize: fontSize.xs,
       textTransform: "capitalize",
     },
     modalBackdrop: {

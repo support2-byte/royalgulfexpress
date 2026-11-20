@@ -1,11 +1,22 @@
+import { ls, tr } from "@/i18n";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import moment from "moment";
-import { useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useEffect, useState } from "react";
+import { StyleSheet, TouchableOpacity, View } from "react-native";
+import { Text } from "@/components/ui/Text";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 
 interface LatestOrder {
   rgl_booking_number: string;
@@ -13,7 +24,7 @@ interface LatestOrder {
   destination_place_name: string;
   eta: string | null;
   status: string;
-  item_ref?: string;
+  item_tracking_id?: string;
 }
 
 const STAGE_META: Record<string, { progress: number; stage: string }> = {
@@ -39,6 +50,54 @@ const LatestShipmentCard = ({ order }: { order: LatestOrder }) => {
 
   const [copiedBooking, setCopiedBooking] = useState(false);
   const [copiedItemRef, setCopiedItemRef] = useState(false);
+  const [trackWidth, setTrackWidth] = useState(0);
+
+  const meta = STAGE_META[order.status] ?? {
+    progress: 0.1,
+    stage: order.status,
+  };
+  const inFlight = meta.progress < 1;
+
+  const progress = useSharedValue(0);
+  const pulse = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = 0;
+    progress.value = withDelay(
+      250,
+      withTiming(meta.progress, {
+        duration: 1100,
+        easing: Easing.out(Easing.cubic),
+      }),
+    );
+  }, [meta.progress, order.rgl_booking_number]);
+
+  useEffect(() => {
+    if (!inFlight) {
+      pulse.value = 0;
+      return;
+    }
+    pulse.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 900, easing: Easing.out(Easing.quad) }),
+        withTiming(0, { duration: 0 }),
+      ),
+      -1,
+    );
+  }, [inFlight]);
+
+  const fillStyle = useAnimatedStyle(() => ({
+    width: progress.value * trackWidth,
+  }));
+
+  const headStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: progress.value * trackWidth - 7 }],
+  }));
+
+  const haloStyle = useAnimatedStyle(() => ({
+    opacity: 0.5 * (1 - pulse.value),
+    transform: [{ scale: 1 + pulse.value * 1.8 }],
+  }));
 
   const handleCopyBooking = async (e: any) => {
     e.stopPropagation?.();
@@ -49,20 +108,15 @@ const LatestShipmentCard = ({ order }: { order: LatestOrder }) => {
 
   const handleCopyItemRef = async (e: any) => {
     e.stopPropagation?.();
-    if (!order.item_ref) return;
-    await Clipboard.setStringAsync(order.item_ref);
+    if (!order.item_tracking_id) return;
+    await Clipboard.setStringAsync(order.item_tracking_id);
     setCopiedItemRef(true);
     setTimeout(() => setCopiedItemRef(false), 1500);
   };
 
-  const meta = STAGE_META[order.status] ?? {
-    progress: 0.1,
-    stage: order.status,
-  };
-
   return (
     <TouchableOpacity
-      activeOpacity={0.9}
+      activeOpacity={0.92}
       onPress={() =>
         router.navigate({
           pathname: "/shipment-details",
@@ -72,45 +126,49 @@ const LatestShipmentCard = ({ order }: { order: LatestOrder }) => {
     >
       <LinearGradient
         style={styles.card}
-        colors={[colors.primary, "#043a37"]}
+        colors={[colors.primary, colors.primaryDeep]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       >
         <View style={styles.topRow}>
-          <Text style={styles.label}>LATEST SHIPMENT</Text>
+          <Text style={styles.label}>{tr("Latest shipment")}</Text>
           <View style={styles.statusPill}>
-            <Text style={styles.statusPillText}>{order.status}</Text>
+            <Text style={styles.statusPillText} numberOfLines={1}>
+              {order.status}
+            </Text>
           </View>
         </View>
 
         <TouchableOpacity
-          style={styles.bookingIdRow}
+          style={styles.copyRow}
           onPress={handleCopyBooking}
           hitSlop={8}
           activeOpacity={0.7}
         >
-          <Text style={styles.bookingId}>{order.rgl_booking_number}</Text>
+          <Text style={styles.bookingId} numberOfLines={1}>
+            {order.rgl_booking_number}
+          </Text>
           <Ionicons
             name={copiedBooking ? "checkmark" : "copy-outline"}
             size={16}
-            color={colors.secondary}
+            color="rgba(255,255,255,0.8)"
           />
         </TouchableOpacity>
 
-        {order.item_ref && (
+        {order.item_tracking_id && (
           <TouchableOpacity
-            style={styles.itemRefRow}
+            style={styles.copyRow}
             onPress={handleCopyItemRef}
             hitSlop={8}
             activeOpacity={0.6}
           >
             <Text style={styles.itemRefText} numberOfLines={1}>
-              {order.item_ref}
+              {order.item_tracking_id}
             </Text>
             <Ionicons
               name={copiedItemRef ? "checkmark" : "copy-outline"}
               size={13}
-              color={colors.secondary}
+              color="rgba(255,255,255,0.7)"
             />
           </TouchableOpacity>
         )}
@@ -131,13 +189,17 @@ const LatestShipmentCard = ({ order }: { order: LatestOrder }) => {
           </View>
         </View>
 
-        <View style={styles.progressTrack}>
-          <View
-            style={[
-              styles.progressFill,
-              { width: `${Math.round(meta.progress * 100)}%` },
-            ]}
-          />
+        <View
+          style={styles.progressWrap}
+          onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
+        >
+          <View style={styles.progressTrack}>
+            <Animated.View style={[styles.progressFill, fillStyle]} />
+          </View>
+          <Animated.View style={[styles.head, headStyle]}>
+            {inFlight && <Animated.View style={[styles.halo, haloStyle]} />}
+            <View style={styles.headCore} />
+          </Animated.View>
         </View>
 
         <View style={styles.footerRow}>
@@ -146,7 +208,7 @@ const LatestShipmentCard = ({ order }: { order: LatestOrder }) => {
           </Text>
           <Text style={styles.footerEta}>
             {order.eta
-              ? `ETA ${moment(order.eta).format("D MMM YYYY")}`
+              ? `${tr("ETA")} ${moment(order.eta).format("D MMM YYYY")}`
               : "ETA —"}
           </Text>
         </View>
@@ -156,78 +218,70 @@ const LatestShipmentCard = ({ order }: { order: LatestOrder }) => {
 };
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
 ) =>
   StyleSheet.create({
     card: {
-      borderRadius: 22,
-      padding: 20,
-      marginTop: 16,
-      marginBottom: 8,
+      borderRadius: 28,
+      padding: 22,
+      overflow: "hidden",
     },
     topRow: {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
-      marginBottom: 10,
+      marginBottom: 14,
+      gap: 10,
     },
     label: {
-      fontSize: fontSize.xs ?? 11,
-      color: colors.background,
-      fontFamily: fonts.semiBold,
-      opacity: 0.7,
-      letterSpacing: 0.5,
+      fontSize: fontSize.sm,
+      color: "rgba(255,255,255,0.72)",
+      fontFamily: fonts.medium,
     },
     statusPill: {
       paddingHorizontal: 12,
       paddingVertical: 5,
       borderRadius: 20,
       backgroundColor: colors.secondary,
+      maxWidth: "60%",
     },
     statusPillText: {
-      fontSize: fontSize.xs ?? 11,
+      fontSize: fontSize.xs,
       color: "#fff",
       fontFamily: fonts.semiBold,
     },
-    bookingId: {
-      fontSize: fontSize.xl,
-      color: colors.secondary,
-      fontFamily: fonts.bold,
-    },
-    bookingIdRow: {
+    copyRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: 8,
+      alignSelf: "flex-start",
       marginBottom: 4,
-      alignSelf: "flex-start",
     },
-    itemRefRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      marginBottom: 16,
-      alignSelf: "flex-start",
+    bookingId: {
+      fontSize: fontSize.xxl,
+      color: "#fff",
+      fontFamily: fonts.bold,
+      letterSpacing: ls(-0.4),
     },
     itemRefText: {
-      fontSize: fontSize.xs ?? 11,
-      color: colors.background,
-      fontFamily: fonts.medium ?? fonts.regular,
-      opacity: 0.85,
+      fontSize: fontSize.xs,
+      color: "rgba(255,255,255,0.75)",
+      fontFamily: fonts.medium,
+      maxWidth: 260,
     },
     routeBlock: {
-      marginBottom: 14,
+      marginTop: 18,
+      marginBottom: 22,
     },
     routeRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 10,
+      gap: 12,
     },
     dot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
+      width: 9,
+      height: 9,
+      borderRadius: 5,
     },
     dotOrigin: {
       backgroundColor: "#fff",
@@ -237,28 +291,54 @@ const createStyles = (
     },
     dotLine: {
       width: 1,
-      height: 16,
+      height: 18,
       backgroundColor: "rgba(255,255,255,0.35)",
-      marginLeft: 3.5,
+      marginLeft: 4,
     },
     routeText: {
       flex: 1,
-      fontSize: fontSize.sm,
-      color: colors.background,
-      fontFamily: fonts.medium ?? fonts.regular,
-      opacity: 0.95,
+      fontSize: fontSize.md,
+      color: "#fff",
+      fontFamily: fonts.medium,
+    },
+    progressWrap: {
+      height: 14,
+      justifyContent: "center",
+      marginBottom: 14,
     },
     progressTrack: {
       height: 4,
       borderRadius: 2,
-      backgroundColor: "rgba(255,255,255,0.25)",
+      backgroundColor: "rgba(255,255,255,0.22)",
       overflow: "hidden",
-      marginBottom: 14,
     },
     progressFill: {
       height: "100%",
       borderRadius: 2,
       backgroundColor: colors.secondary,
+    },
+    head: {
+      position: "absolute",
+      left: 0,
+      width: 14,
+      height: 14,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    halo: {
+      position: "absolute",
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      backgroundColor: colors.secondary,
+    },
+    headCore: {
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      backgroundColor: "#fff",
+      borderWidth: 3,
+      borderColor: colors.secondary,
     },
     footerRow: {
       flexDirection: "row",
@@ -268,14 +348,14 @@ const createStyles = (
     footerStage: {
       flex: 1,
       fontSize: fontSize.sm,
-      color: colors.background,
+      color: "#fff",
       fontFamily: fonts.semiBold,
       marginRight: 8,
     },
     footerEta: {
       fontSize: fontSize.sm,
-      color: colors.background,
-      fontFamily: fonts.semiBold,
+      color: "rgba(255,255,255,0.85)",
+      fontFamily: fonts.medium,
     },
   });
 

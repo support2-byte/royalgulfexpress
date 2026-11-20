@@ -7,6 +7,10 @@ export interface ShipmentRow {
   final_destination: string;
   order_item_id: number;
   item_ref: string;
+  item_tracking_id: string | null;
+  order_tracking_id: string | null;
+  category: string | null;
+  subcategory: string | null;
   status: string | null;
   total_number: string;
   weight: string;
@@ -19,6 +23,9 @@ export interface ShipmentRow {
 export interface OrderItemLine {
   order_item_id: number;
   item_ref: string;
+  tracking_id: string | null;
+  category: string | null;
+  subcategory: string | null;
   status: string | null;
   boxes: number;
   weight: number;
@@ -52,6 +59,9 @@ export function groupByOrder(rows: ShipmentRow[]): OrderGroup[] {
     map.get(row.order_id)!.items.push({
       order_item_id: row.order_item_id,
       item_ref: row.item_ref,
+      tracking_id: row.item_tracking_id,
+      category: row.category,
+      subcategory: row.subcategory,
       status: row.status,
       boxes: Number(row.total_number) || 0,
       weight: Number(row.weight) || 0,
@@ -85,3 +95,29 @@ export async function fetchShipmentsForReceiver(
     message: response.data.message,
   };
 }
+
+export const itemLabel = (item: {
+  category: string | null;
+  subcategory: string | null;
+}) => [item.category, item.subcategory].filter(Boolean).join(" · ") || "Item";
+
+const STAGE_ORDER = [
+  "Created",
+  "Under Processing",
+  "Ready for Loading",
+  "Loaded into Container",
+  "Shipment Processing",
+  "Shipment In Transit",
+  "Arrived at Sort Facility",
+  "Ready for Delivery",
+  "Shipment Delivered",
+];
+
+/** An order is only as far along as its least advanced item. */
+export const orderStatusOf = (order: OrderGroup): string => {
+  const known = order.items
+    .map((i) => i.status)
+    .filter((s): s is string => !!s && STAGE_ORDER.includes(s))
+    .sort((a, b) => STAGE_ORDER.indexOf(a) - STAGE_ORDER.indexOf(b));
+  return known[0] ?? order.items[0]?.status ?? "Created";
+};

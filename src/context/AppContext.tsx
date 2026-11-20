@@ -1,3 +1,11 @@
+import { api } from "@/api";
+import {
+  canAccess,
+  isOrderRole,
+  roleCan,
+  type Feature,
+  type OrderRole,
+} from "@/constants/permissions";
 import {
   getMyNotifications,
   markAllNotificationsRead,
@@ -10,6 +18,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -18,7 +27,7 @@ import { useAuth } from "./AuthContext";
 type ChatMessage = {
   id: number;
   chat_room_id: number;
-  sender_type: "admin" | "receiver" | "shipper" | "system";
+  sender_type: "admin" | "receiver" | "sender" | "system";
   sender_id: number;
   message: string | null;
   attachments: { id: number; url: string }[];
@@ -37,9 +46,15 @@ type AppNotification = {
   created_at: string;
 };
 
-type Rates = {
+export type RateOption = { key: string; label: string; value: number };
+
+export type Rates = {
   delivery_rate: number;
   storage_rate: number;
+  tax: number;
+  storage_types: RateOption[];
+  storage_sizes: RateOption[];
+  pickup_zones: RateOption[];
 };
 
 type AppContextType = {
@@ -60,6 +75,12 @@ type AppContextType = {
   shipmentsRefreshing: boolean;
   shipmentsError: string | null;
   refreshShipments: (isRefresh?: boolean) => Promise<void>;
+  /** The customer's part (sender / receiver / both) in a booking, if known. */
+  roleOf: (bookingNumber?: string | null) => OrderRole | null;
+  /** Orders where the customer is allowed to use a feature. */
+  ordersFor: (feature: Feature) => OrderGroup[];
+  /** Can the customer use a feature on at least one order? */
+  canUseFeature: (feature: Feature) => boolean;
   rates: Rates;
   setRates: React.Dispatch<React.SetStateAction<Rates>>;
 };
@@ -76,6 +97,10 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   const [rates, setRates] = useState<Rates>({
     delivery_rate: 0,
     storage_rate: 0,
+    tax: 0,
+    storage_types: [],
+    storage_sizes: [],
+    pickup_zones: [],
   });
   const [chatRoomId, setChatRoomId] = useState<number | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -88,6 +113,34 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   const [shipmentsLoading, setShipmentsLoading] = useState(true);
   const [shipmentsRefreshing, setShipmentsRefreshing] = useState(false);
   const [shipmentsError, setShipmentsError] = useState<string | null>(null);
+  const [roles, setRoles] = useState<Record<string, OrderRole>>({});
+  const [rolesLoaded, setRolesLoaded] = useState(false);
+
+  const roleKey = (booking?: string | null) => (booking ?? "").trim().toLowerCase();
+
+  // Matches the customer's ref against sender_ref / receiver_ref of each order.
+  const fetchRoles = useCallback(async (customerId: string) => {
+    try {
+      const res = await api.get(`/shipments/${customerId}/roles`, {
+        validateStatus: () => true,
+      });
+      if (res.data?.success && res.data.roles) {
+        const next: Record<string, OrderRole> = {};
+        Object.entries(res.data.roles as Record<string, unknown>).forEach(
+          ([booking, role]) => {
+            if (isOrderRole(role)) next[roleKey(booking)] = role;
+          },
+        );
+        setRoles(next);
+        setRolesLoaded(true);
+        return;
+      }
+    } catch {
+      // fall through - account type is used as the fallback
+    }
+    setRoles({});
+    setRolesLoaded(false);
+  }, []);
 
   const refreshShipments = useCallback(
     async (isRefresh = false) => {
@@ -97,7 +150,10 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         isRefresh ? setShipmentsRefreshing(true) : setShipmentsLoading(true);
         setShipmentsError(null);
 
-        const result = await fetchShipmentsForReceiver(user.customer_id);
+        const [result] = await Promise.all([
+          fetchShipmentsForReceiver(user.customer_id),
+          fetchRoles(user.customer_id),
+        ]);
 
         if (result.success) {
           setOrders(result.orders);
@@ -117,7 +173,33 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         setShipmentsRefreshing(false);
       }
     },
-    [user?.customer_id],
+    [user?.customer_id, fetchRoles],
+  );
+
+  const roleOf = useCallback(
+    (booking?: string | null): OrderRole | null =>
+      roles[roleKey(booking)] ?? null,
+    [roles],
+  );
+
+  const ordersFor = useCallback(
+    (feature: Feature): OrderGroup[] => {
+      // Roles unavailable (older backend): fall back to the account type.
+      if (!rolesLoaded) return canAccess(user.type, feature) ? orders : [];
+      return orders.filter((o) => {
+        const role = roles[roleKey(o.booking_number)];
+        return role
+          ? roleCan(role, feature)
+          : canAccess(user.type, feature);
+      });
+    },
+    [orders, roles, rolesLoaded, user.type],
+  );
+
+  const canUseFeature = useCallback(
+    (feature: Feature) =>
+      ordersFor(feature).length > 0 || (!rolesLoaded && canAccess(user.type, feature)),
+    [ordersFor, rolesLoaded, user.type],
   );
 
   useEffect(() => {
@@ -233,6 +315,9 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         shipmentsRefreshing,
         shipmentsError,
         refreshShipments,
+        roleOf,
+        ordersFor,
+        canUseFeature,
         rates,
         setRates,
       }}

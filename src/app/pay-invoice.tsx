@@ -1,20 +1,16 @@
+import { ls, tr } from "@/i18n";
 import { api } from "@/api";
-import Header from "@/components/ui/Header";
+import { Button } from "@/components/ui/Button";
+import Header, { useSheetStyle } from "@/components/ui/Header";
+import { StateView } from "@/components/ui/StateView";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { createNgeniusOrder } from "@/lib/paymentService";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import moment from "moment";
 import { useCallback, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Alert, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -22,6 +18,7 @@ type InvoiceStatus = "paid" | "unpaid";
 
 interface InvoiceRow {
   id: number | string;
+  public_ref: string;
   invoice_id: string;
   invoice_type: string;
   amount: number | string;
@@ -79,7 +76,7 @@ function mapDetails(
   const storageExtra = isStorage ? (extra as StorageDetails | null) : null;
 
   return {
-    id: String(invoice.id),
+    id: invoice.public_ref,
     invoiceNumber: invoice.invoice_id,
     invoiceType: invoice.invoice_type ?? "",
     shipmentRef: extra?.shipment ?? "",
@@ -105,6 +102,7 @@ async function fetchInvoiceDetails(invoiceId: string): Promise<InvoiceDetails> {
 export default function PayInvoiceScreen() {
   const { colors, fontSize, fonts } = useAppTheme();
   const styles = createStyles(colors, fontSize, fonts);
+  const sheet = useSheetStyle();
   const { invoiceId } = useLocalSearchParams<{ invoiceId: string }>();
 
   const [invoice, setInvoice] = useState<InvoiceDetails | null>(null);
@@ -152,16 +150,23 @@ export default function PayInvoiceScreen() {
     }
   };
 
+  const headerEl = (
+    <Header
+      name="Pay invoice"
+      description={tr("Secure payment via N-Genius")}
+      icon="card"
+    />
+  );
+
   if (loading) {
     return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <Header
-          name="Pay Invoice"
-          description="Secure payment via N-Genius"
-          icon="card"
-        />
-        <View style={styles.centerState}>
-          <ActivityIndicator size="small" color={colors.primary} />
+      <SafeAreaView
+        style={styles.container}
+        edges={["left", "right", "bottom"]}
+      >
+        {headerEl}
+        <View style={sheet}>
+          <StateView loading />
         </View>
       </SafeAreaView>
     );
@@ -169,265 +174,197 @@ export default function PayInvoiceScreen() {
 
   if (error || !invoice) {
     return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <Header
-          name="Pay Invoice"
-          description="Secure payment via N-Genius"
-          icon="card"
-        />
-        <View style={styles.centerState}>
-          <Text style={styles.errorText}>{error ?? "Invoice not found."}</Text>
-          <TouchableOpacity onPress={loadInvoice} style={styles.retryBtn}>
-            <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
+      <SafeAreaView
+        style={styles.container}
+        edges={["left", "right", "bottom"]}
+      >
+        {headerEl}
+        <View style={sheet}>
+          <StateView
+            icon="cloud-offline-outline"
+            label={error ?? "Invoice not found."}
+            actionLabel={tr("Retry")}
+            onAction={loadInvoice}
+          />
         </View>
       </SafeAreaView>
     );
   }
 
   const isStorage = invoice.invoiceType?.toLowerCase() === "storage";
+  const isPaid = invoice.status === "paid";
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <Header
-        name="Pay Invoice"
-        description="Secure payment via N-Genius"
-        icon="card"
-      />
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
+      {headerEl}
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.bodyContainer}
-      >
-        <Animated.View entering={FadeInDown.duration(350)} style={styles.card}>
-          <View style={styles.cardTopRow}>
-            <View style={styles.iconBubble}>
-              <Ionicons
-                name="document-text-outline"
-                size={18}
-                color={colors.primary}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.invoiceNumber}>{invoice.invoiceNumber}</Text>
-              <View style={styles.typeRow}>
-                {!!invoice.invoiceType && (
-                  <View style={styles.typeChip}>
-                    <Text style={styles.typeChipText}>
-                      {invoice.invoiceType}
-                    </Text>
-                  </View>
-                )}
-                {!!invoice.shipmentRef && (
-                  <Text style={styles.invoiceDesc} numberOfLines={1}>
-                    {invoice.shipmentRef}
-                  </Text>
-                )}
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.row}>
-            <Text style={styles.metaLabel}>Date</Text>
-            <Text style={styles.metaValue}>
-              {moment(invoice.date).format("MMM D, YYYY")}
+      <View style={sheet}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.bodyContainer}
+        >
+          <Animated.View
+            entering={FadeInDown.duration(380)}
+            style={styles.hero}
+          >
+            <Text style={styles.heroLabel}>
+              {isPaid ? "Amount paid" : "Amount due"}
             </Text>
-          </View>
-
-          {isStorage && invoice.storageDays !== undefined && (
-            <View style={styles.row}>
-              <Text style={styles.metaLabel}>Storage Duration</Text>
-              <Text style={styles.metaValue}>
-                {invoice.storageDays} day{invoice.storageDays === 1 ? "" : "s"}
-              </Text>
-            </View>
-          )}
-
-          {isStorage && invoice.storageAmount !== undefined && (
-            <View style={styles.row}>
-              <Text style={styles.metaLabel}>Storage</Text>
-              <Text style={styles.metaValue}>
-                {invoice.storageAmount.toLocaleString()}
-              </Text>
-            </View>
-          )}
-
-          <View style={styles.row}>
-            <Text style={styles.metaLabel}>Status</Text>
-            <View
-              style={[
-                styles.statusChip,
-                invoice.status === "paid"
-                  ? { backgroundColor: "#E8F5E9" }
-                  : { backgroundColor: "#FFF3E0" },
-              ]}
-            >
+            <Text style={styles.heroAmount}>
+              <Text style={styles.heroCurrency}>{invoice.currency} </Text>
+              {invoice.amount.toLocaleString()}
+            </Text>
+            <View style={styles.statusRow}>
               <View
                 style={[
                   styles.statusDot,
                   {
-                    backgroundColor:
-                      invoice.status === "paid" ? "#16803C" : "#B4690E",
+                    backgroundColor: isPaid ? colors.success : colors.secondary,
                   },
                 ]}
               />
               <Text
                 style={[
-                  styles.statusChipText,
-                  { color: invoice.status === "paid" ? "#16803C" : "#B4690E" },
+                  styles.statusText,
+                  { color: isPaid ? colors.success : colors.secondary },
                 ]}
               >
-                {invoice.status === "paid" ? "Paid" : "Unpaid"}
+                {isPaid ? "Paid" : "Waiting for payment"}
               </Text>
             </View>
-          </View>
+          </Animated.View>
 
-          <View style={styles.divider} />
-
-          <View style={styles.row}>
-            <Text style={styles.amountLabel}>Amount Due</Text>
-            <Text style={styles.amountValue}>
-              {invoice.currency} {invoice.amount.toLocaleString()}
-            </Text>
-          </View>
-        </Animated.View>
-
-        <Animated.View
-          entering={FadeInDown.duration(350).delay(80)}
-          style={styles.secureNote}
-        >
-          <Ionicons
-            name="shield-checkmark-outline"
-            size={16}
-            color={colors.textSecondary}
-          />
-          <Text style={styles.secureNoteText}>
-            Payments are processed securely by N-Genius. Card details never
-            touch our servers.
-          </Text>
-        </Animated.View>
-      </ScrollView>
-
-      {invoice.status === "unpaid" && (
-        <View style={styles.footer}>
-          <TouchableOpacity
-            style={[styles.payBtn, paying && { opacity: 0.7 }]}
-            activeOpacity={0.85}
-            onPress={handlePay}
-            disabled={paying}
+          <Animated.View
+            entering={FadeInDown.duration(380).delay(90)}
+            style={styles.details}
           >
-            {paying ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="lock-closed" size={16} color="#fff" />
-                <Text style={styles.payBtnText}>
-                  Pay {invoice.currency} {invoice.amount.toLocaleString()}
+            <View style={styles.row}>
+              <Text style={styles.metaLabel}>{tr("Invoice")}</Text>
+              <Text style={styles.metaValue}>{invoice.invoiceNumber}</Text>
+            </View>
+            {!!invoice.invoiceType && (
+              <View style={styles.row}>
+                <Text style={styles.metaLabel}>{tr("Type")}</Text>
+                <Text
+                  style={[styles.metaValue, { textTransform: "capitalize" }]}
+                >
+                  {invoice.invoiceType}
                 </Text>
-              </>
+              </View>
             )}
-          </TouchableOpacity>
-        </View>
-      )}
+            {!!invoice.shipmentRef && (
+              <View style={styles.row}>
+                <Text style={styles.metaLabel}>{tr("Shipment")}</Text>
+                <Text style={styles.metaValue} numberOfLines={1}>
+                  {invoice.shipmentRef}
+                </Text>
+              </View>
+            )}
+            <View style={styles.row}>
+              <Text style={styles.metaLabel}>{tr("Due date")}</Text>
+              <Text style={styles.metaValue}>
+                {moment(invoice.date).format("D MMM YYYY")}
+              </Text>
+            </View>
+            {isStorage && invoice.storageDays !== undefined && (
+              <View style={styles.row}>
+                <Text style={styles.metaLabel}>{tr("Storage duration")}</Text>
+                <Text style={styles.metaValue}>
+                  {invoice.storageDays} day
+                  {invoice.storageDays === 1 ? "" : "s"}
+                </Text>
+              </View>
+            )}
+            {isStorage && invoice.storageAmount !== undefined && (
+              <View style={styles.row}>
+                <Text style={styles.metaLabel}>{tr("Storage")}</Text>
+                <Text style={styles.metaValue}>
+                  {invoice.storageAmount.toLocaleString()}
+                </Text>
+              </View>
+            )}
+          </Animated.View>
+
+          <Animated.View
+            entering={FadeInDown.duration(380).delay(170)}
+            style={styles.secureNote}
+          >
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={18}
+              color={colors.primary}
+            />
+            <Text style={styles.secureNoteText}>
+              {tr("Payments are processed securely by N-Genius. Card details never touch our servers.")}
+            </Text>
+          </Animated.View>
+        </ScrollView>
+
+        {!isPaid && (
+          <Animated.View
+            entering={FadeInDown.duration(380).delay(240)}
+            style={styles.footer}
+          >
+            <Button
+              label={tr("Pay {amount}", { amount: `${invoice.currency} ${invoice.amount.toLocaleString()}` })}
+              icon="lock-closed"
+              variant="accent"
+              loading={paying}
+              onPress={handlePay}
+            />
+          </Animated.View>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
 ) =>
   StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
-    bodyContainer: { padding: 20, paddingBottom: 20 },
-    centerState: {
-      flex: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      paddingHorizontal: 30,
-    },
-    errorText: {
-      fontFamily: fonts.regular,
+    container: { flex: 1, backgroundColor: colors.surface },
+    bodyContainer: { paddingHorizontal: 20, paddingTop: 28, paddingBottom: 20 },
+    hero: { paddingBottom: 24 },
+    heroLabel: {
+      fontFamily: fonts.medium,
       fontSize: fontSize.sm,
       color: colors.textSecondary,
-      textAlign: "center",
     },
-    retryBtn: {
-      marginTop: 8,
-      paddingHorizontal: 16,
-      paddingVertical: 8,
-      borderRadius: 8,
-      backgroundColor: colors.primary,
+    heroAmount: {
+      fontFamily: fonts.bold,
+      fontSize: 44,
+      lineHeight: 52,
+      color: colors.ink,
+      letterSpacing: ls(-1.2),
+      marginTop: 4,
     },
-    retryText: {
+    heroCurrency: {
       fontFamily: fonts.semiBold,
-      fontSize: fontSize.sm,
-      color: "#fff",
+      fontSize: fontSize.lg,
+      color: colors.lightText,
+      letterSpacing: ls(0),
     },
-    card: {
-      backgroundColor: colors.background,
-      borderRadius: 16,
-      padding: 18,
-      borderWidth: 1,
-      borderColor: colors.borderColor,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 8,
-      elevation: 2,
-    },
-    cardTopRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
-    iconBubble: {
-      width: 34,
-      height: 34,
-      borderRadius: 10,
-      backgroundColor: `${colors.primary}1A`,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    invoiceNumber: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.md,
-      color: colors.text,
-      marginBottom: 4,
-    },
-    invoiceDesc: {
-      fontFamily: fonts.regular,
-      fontSize: fontSize.sm,
-      color: colors.textSecondary,
-      flexShrink: 1,
-    },
-    typeRow: {
+    statusRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 6,
+      gap: 7,
+      marginTop: 8,
     },
-    typeChip: {
-      borderRadius: 6,
-      paddingHorizontal: 7,
-      paddingVertical: 2,
-      backgroundColor: `${colors.primary}1A`,
-    },
-    typeChipText: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.xs ?? 11,
-      color: colors.primary,
-      textTransform: "capitalize",
-    },
-    divider: {
-      height: 1,
-      backgroundColor: colors.borderColor,
-      marginVertical: 14,
+    statusDot: { width: 8, height: 8, borderRadius: 4 },
+    statusText: { fontFamily: fonts.semiBold, fontSize: fontSize.sm },
+    details: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.hairline,
     },
     row: {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
-      marginBottom: 10,
+      gap: 16,
+      paddingVertical: 15,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
     },
     metaLabel: {
       fontFamily: fonts.regular,
@@ -435,67 +372,27 @@ const createStyles = (
       color: colors.textSecondary,
     },
     metaValue: {
-      fontFamily: fonts.medium ?? fonts.regular,
+      flexShrink: 1,
+      fontFamily: fonts.semiBold,
       fontSize: fontSize.sm,
-      color: colors.text,
-    },
-    statusChip: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 5,
-      borderRadius: 20,
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-    },
-    statusDot: {
-      width: 6,
-      height: 6,
-      borderRadius: 3,
-    },
-    statusChipText: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.xs ?? 11,
-    },
-    amountLabel: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.md,
-      color: colors.text,
-    },
-    amountValue: {
-      fontFamily: fonts.bold,
-      fontSize: fontSize.xl,
-      color: colors.primary,
+      color: colors.ink,
     },
     secureNote: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 8,
-      marginTop: 16,
-      paddingHorizontal: 4,
+      gap: 12,
+      marginTop: 24,
     },
     secureNoteText: {
       flex: 1,
       fontFamily: fonts.regular,
-      fontSize: fontSize.xs ?? 11,
+      fontSize: fontSize.xs,
+      lineHeight: 17,
       color: colors.textSecondary,
     },
     footer: {
-      padding: 20,
-      borderTopWidth: 1,
-      borderTopColor: colors.borderColor,
-    },
-    payBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      backgroundColor: colors.secondary,
-      borderRadius: 12,
-      paddingVertical: 15,
-    },
-    payBtnText: {
-      color: "#fff",
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.md,
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      paddingBottom: 16,
     },
   });

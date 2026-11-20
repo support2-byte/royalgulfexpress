@@ -1,24 +1,26 @@
-import Header from "@/components/ui/Header";
+import { tr } from "@/i18n";
+import { EmptyState } from "@/components/Home/EmptyState";
+import Header, { useSheetStyle } from "@/components/ui/Header";
 import { useAppContext } from "@/context/AppContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import moment from "moment";
 import { useCallback, useState } from "react";
-import {
-  FlatList,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { FlatList, RefreshControl, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Text } from "@/components/ui/Text";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function Alert() {
   const { colors, fontSize, fonts } = useAppTheme();
   const styles = createStyles(colors, fontSize, fonts);
+  const sheet = useSheetStyle();
 
-  const { notifications, markNotificationAsRead, markAllNotificationsAsRead } =
-    useAppContext();
+  const {
+    notifications,
+    unreadNotificationCount,
+    markNotificationAsRead,
+    markAllNotificationsAsRead,
+  } = useAppContext();
   const [refreshing, setRefreshing] = useState(false);
 
   const handleMarkAsRead = useCallback(
@@ -33,145 +35,165 @@ export default function Alert() {
     setTimeout(() => setRefreshing(false), 500);
   }, []);
 
-  const renderItem = ({ item }: { item: (typeof notifications)[number] }) => {
-    return (
+  const renderItem = ({
+    item,
+    index,
+  }: {
+    item: (typeof notifications)[number];
+    index: number;
+  }) => (
+    <Animated.View
+      entering={FadeInDown.duration(320).delay(Math.min(index, 8) * 40)}
+    >
       <TouchableOpacity
-        activeOpacity={0.7}
+        activeOpacity={0.6}
         onPress={() => handleMarkAsRead(item.id)}
-        style={[
-          styles.card,
-          !item.is_read && { backgroundColor: `${colors.primary}0D` },
-        ]}
+        style={styles.row}
       >
-        <View style={styles.cardBody}>
-          <View style={styles.cardRow}>
-            <Text style={styles.cardTitle} numberOfLines={1}>
-              {item.title}
-            </Text>
-            {!item.is_read && <View style={styles.unreadDot} />}
-          </View>
+        <View style={styles.dotWrap}>
+          {!item.is_read && <View style={styles.unreadDot} />}
+        </View>
+        <View style={styles.body}>
+          <Text
+            style={[styles.title, item.is_read && styles.titleRead]}
+            numberOfLines={1}
+          >
+            {item.title}
+          </Text>
           {item.body && (
-            <Text style={styles.cardText} numberOfLines={2}>
+            <Text style={styles.text} numberOfLines={2}>
               {item.body}
             </Text>
           )}
-          <Text style={styles.cardTime}>
-            {moment(item.created_at).fromNow()}
-          </Text>
         </View>
+        <Text style={styles.time}>{moment(item.created_at).fromNow(true)}</Text>
       </TouchableOpacity>
-    );
-  };
+    </Animated.View>
+  );
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <Header
         name="Notifications"
-        description="Stay up-to-date related to your shipping and invoices"
+        description={tr("Updates on your shipments and invoices")}
         icon="notifications"
       />
 
-      {notifications.length === 0 ? (
-        <View style={styles.centerState}>
-          <Text style={styles.emptyText}>No notifications yet</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={notifications}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={renderItem}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 20 }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              tintColor={colors.primary}
-            />
-          }
-        />
-      )}
+      <View style={sheet}>
+        {notifications.length === 0 ? (
+          <EmptyState
+            icon="notifications-outline"
+            label="You're all caught up."
+          />
+        ) : (
+          <FlatList
+            data={notifications}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={renderItem}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.list}
+            ListHeaderComponent={
+              <View style={styles.topRow}>
+                <Text style={styles.count}>
+                  {unreadNotificationCount > 0
+                    ? tr("{n} unread", { n: unreadNotificationCount })
+                    : "All read"}
+                </Text>
+                {unreadNotificationCount > 0 && (
+                  <TouchableOpacity
+                    onPress={markAllNotificationsAsRead}
+                    hitSlop={10}
+                  >
+                    <Text style={styles.action}>{tr("Mark all read")}</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            }
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                tintColor={colors.primary}
+              />
+            }
+          />
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
 ) =>
   StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: colors.background,
+      backgroundColor: colors.surface,
     },
-    centerState: {
-      flex: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      paddingHorizontal: 30,
-    },
-    emptyText: {
-      fontFamily: fonts.regular,
-      fontSize: fontSize.sm,
-      color: colors.textSecondary,
-      textAlign: "center",
-    },
-    retryBtn: {
-      marginTop: 8,
-      paddingHorizontal: 16,
-      paddingVertical: 8,
-      borderRadius: 8,
-      backgroundColor: colors.primary,
-    },
-    retryText: {
-      fontFamily: fonts.semiBold,
-      fontSize: fontSize.sm,
-      color: "#fff",
-    },
-    card: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      gap: 12,
+    list: {
       paddingHorizontal: 20,
-      paddingVertical: 16,
-      borderBottomWidth: 1,
-      borderColor: colors.borderColor,
+      paddingTop: 22,
+      paddingBottom: 40,
     },
-
-    cardBody: {
-      flex: 1,
-    },
-    cardRow: {
+    topRow: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
+      paddingBottom: 6,
     },
-    cardTitle: {
+    count: {
+      fontSize: fontSize.sm,
+      fontFamily: fonts.medium,
+      color: colors.textSecondary,
+    },
+    action: {
+      fontSize: fontSize.sm,
       fontFamily: fonts.semiBold,
-      fontSize: fontSize.md,
       color: colors.secondary,
-      flexShrink: 1,
+    },
+    row: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 10,
+      paddingVertical: 15,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    dotWrap: {
+      width: 10,
+      paddingTop: 6,
+      alignItems: "center",
     },
     unreadDot: {
       width: 8,
       height: 8,
       borderRadius: 4,
-      backgroundColor: colors.primary,
-      marginLeft: 8,
+      backgroundColor: colors.secondary,
     },
-    cardText: {
-      fontFamily: fonts.regular,
+    body: {
+      flex: 1,
+    },
+    title: {
+      fontSize: fontSize.md,
+      fontFamily: fonts.bold,
+      color: colors.ink,
+    },
+    titleRead: {
+      fontFamily: fonts.medium,
+      color: colors.textSecondary,
+    },
+    text: {
       fontSize: fontSize.sm,
-      color: colors.textSecondary,
-      marginTop: 2,
-    },
-    cardTime: {
       fontFamily: fonts.regular,
-      fontSize: fontSize.xs,
       color: colors.textSecondary,
-      opacity: 0.7,
-      marginTop: 4,
+      marginTop: 3,
+      lineHeight: 19,
+    },
+    time: {
+      fontSize: fontSize.xs,
+      fontFamily: fonts.regular,
+      color: colors.lightText,
+      paddingTop: 3,
     },
   });

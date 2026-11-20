@@ -1,20 +1,14 @@
+import { flipIcon, tr } from "@/i18n";
+import { DefaultStatusStyle, ShipmentStatus } from "@/constants/theme";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { RecentOrder } from "@/types/home";
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { router } from "expo-router";
 import moment from "moment";
 import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, TouchableOpacity, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import Animated, { FadeInDown } from "react-native-reanimated";
-
-interface RecentOrder {
-  rgl_booking_number: string;
-  place_of_loading: string | number;
-  place_of_destination: string | number;
-  loading_place_name: string;
-  destination_place_name: string;
-  eta: string | null;
-  status: string;
-  created_at: string;
-}
 
 interface Props {
   order: RecentOrder;
@@ -25,15 +19,20 @@ export const RecentShipmentCard: React.FC<Props> = ({ order, index }) => {
   const { colors, fontSize, fonts } = useAppTheme();
   const styles = createStyles(colors, fontSize, fonts);
 
-  const etaLabel = order.eta
-    ? `ETA: ${moment(order.eta).format("D MMM YYYY")}`
-    : "ETA: —";
+  const tone: { bg: string; text: string; dot: string } =
+    (ShipmentStatus as Record<string, { bg: string; text: string; dot: string }>)[
+      order.status
+    ] ?? DefaultStatusStyle;
+
+  const etaLabel = order.eta ? moment(order.eta).format("D MMM YYYY") : "—";
 
   return (
-    <Animated.View entering={FadeInDown.duration(400).delay(240 + index * 70)}>
+    <Animated.View
+      entering={FadeInDown.duration(320).delay(Math.min(index, 6) * 45)}
+    >
       <TouchableOpacity
-        style={styles.card}
-        activeOpacity={0.8}
+        style={styles.row}
+        activeOpacity={0.6}
         onPress={() =>
           router.navigate({
             pathname: "/shipment-details",
@@ -41,20 +40,34 @@ export const RecentShipmentCard: React.FC<Props> = ({ order, index }) => {
           })
         }
       >
-        <View style={styles.topRow}>
-          <Text style={styles.bookingId}>
+        <View style={styles.rail}>
+          <View style={[styles.railDot, { backgroundColor: tone.dot }]} />
+        </View>
+
+        <View style={styles.main}>
+          <Text style={styles.bookingId} numberOfLines={1}>
             {order.rgl_booking_number ?? "—"}
           </Text>
-          <View style={styles.statusPill}>
-            <Text style={styles.statusText}>{order.status ?? "Unknown"}</Text>
+          <View style={styles.routeRow}>
+            <Text style={styles.route} numberOfLines={1}>
+              {order.loading_place_name ?? "—"}
+            </Text>
+            <Ionicons
+              name={flipIcon("arrow-forward") as any}
+              size={12}
+              color={colors.lightText}
+            />
+            <Text style={styles.route} numberOfLines={1}>
+              {order.destination_place_name ?? "—"}
+            </Text>
           </View>
         </View>
-        <Text style={styles.route}>{order.loading_place_name ?? "—"}</Text>
-        <View style={styles.bottomRow}>
-          <Text style={styles.route}>
-            {order.destination_place_name ?? "—"}
+
+        <View style={styles.side}>
+          <Text style={[styles.status, { color: tone.text }]} numberOfLines={1}>
+            {order.status ?? "Unknown"}
           </Text>
-          <Text style={styles.eta}>{etaLabel}</Text>
+          <Text style={styles.eta}>ETA {etaLabel}</Text>
         </View>
       </TouchableOpacity>
     </Animated.View>
@@ -62,59 +75,62 @@ export const RecentShipmentCard: React.FC<Props> = ({ order, index }) => {
 };
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
 ) =>
   StyleSheet.create({
-    card: {
-      padding: 14,
-      borderRadius: 14,
-      backgroundColor: colors.lightGrey,
-      marginBottom: 10,
-      shadowColor: colors.text,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 8,
-      elevation: 2,
-    },
-    topRow: {
+    row: {
       flexDirection: "row",
-      justifyContent: "space-between",
       alignItems: "center",
-      marginBottom: 4,
+      paddingVertical: 15,
+      gap: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    rail: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      backgroundColor: colors.surface,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    railDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    main: {
+      flex: 1,
     },
     bookingId: {
-      fontSize: fontSize.sm,
+      fontSize: fontSize.md,
       fontFamily: fonts.bold,
-      color: colors.text,
+      color: colors.ink,
     },
-    statusPill: {
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: 20,
-      backgroundColor: colors.primary,
-    },
-    statusText: {
-      fontSize: fontSize.xs ?? 10,
-      fontFamily: fonts.semiBold,
-      color: colors.background,
+    routeRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginTop: 3,
     },
     route: {
-      fontSize: fontSize.xs ?? fontSize.sm,
+      flexShrink: 1,
+      fontSize: fontSize.xs,
       fontFamily: fonts.regular,
       color: colors.textSecondary,
-      marginTop: 2,
     },
-    bottomRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginTop: 2,
+    side: {
+      alignItems: "flex-end",
+      maxWidth: "38%",
+    },
+    status: {
+      fontSize: fontSize.xs,
+      fontFamily: fonts.semiBold,
     },
     eta: {
-      fontSize: fontSize.xs ?? 10,
-      fontFamily: fonts.semiBold,
-      color: colors.textSecondary,
+      fontSize: fontSize.xs,
+      fontFamily: fonts.regular,
+      color: colors.lightText,
+      marginTop: 3,
     },
   });

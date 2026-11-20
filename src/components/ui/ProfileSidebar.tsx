@@ -1,19 +1,12 @@
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
+import { flipIcon, tr, useI18n, ls } from "@/i18n";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Dimensions,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, Dimensions, Modal, Pressable, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -45,11 +38,13 @@ export default function ProfileSidebar({
   const { user, logout } = useAuth();
 
   const [loggingOut, setLoggingOut] = useState(false);
-  const translateX = useSharedValue(-SIDEBAR_WIDTH);
+  const { isRTL } = useI18n();
+  const hidden = isRTL ? SIDEBAR_WIDTH : -SIDEBAR_WIDTH;
+  const translateX = useSharedValue(hidden);
   const scrimOpacity = useSharedValue(0);
 
   useEffect(() => {
-    translateX.value = withTiming(visible ? 0 : -SIDEBAR_WIDTH, {
+    translateX.value = withTiming(visible ? 0 : hidden, {
       duration: 280,
       easing: Easing.out(Easing.cubic),
     });
@@ -70,9 +65,9 @@ export default function ProfileSidebar({
   const initials = getInitials(user?.fullName);
 
   const handleLogoutPress = () => {
-    Alert.alert("Log out", "Are you sure you want to log out?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Log out", style: "destructive", onPress: handleConfirmedLogout },
+    Alert.alert(tr("Log out"), tr("Are you sure you want to log out?"), [
+      { text: tr("Cancel"), style: "cancel" },
+      { text: tr("Log out"), style: "destructive", onPress: handleConfirmedLogout },
     ]);
   };
 
@@ -122,7 +117,10 @@ export default function ProfileSidebar({
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
+      <Pressable
+        style={[StyleSheet.absoluteFill, { direction: isRTL ? "rtl" : "ltr" }]}
+        onPress={onClose}
+      >
         <Animated.View
           style={[StyleSheet.absoluteFill, styles.scrim, scrimStyle]}
         />
@@ -148,6 +146,12 @@ export default function ProfileSidebar({
             <Text style={styles.email} numberOfLines={1}>
               {user?.email ?? "—"}
             </Text>
+          </View>
+
+          <View style={styles.divider} />
+
+          <View style={{ paddingHorizontal: 20 }}>
+            <LanguageSwitcher />
           </View>
 
           <View style={styles.divider} />
@@ -179,13 +183,13 @@ export default function ProfileSidebar({
                     item.destructive && styles.menuLabelDestructive,
                   ]}
                 >
-                  {item.label}
+                  {tr(item.label)}
                 </Text>
                 {item.destructive && loggingOut ? (
                   <ActivityIndicator size="small" color="#DC2626" />
                 ) : !item.destructive ? (
                   <Ionicons
-                    name="chevron-forward"
+                    name={flipIcon("chevron-forward") as any}
                     size={14}
                     color={colors.textSecondary}
                   />
@@ -194,7 +198,7 @@ export default function ProfileSidebar({
             ))}
           </View>
 
-          <Text style={styles.versionText}>v1.0.0</Text>
+          <Text style={styles.versionText}>{tr("v1.0.0")}</Text>
         </SafeAreaView>
       </Animated.View>
     </Modal>
@@ -209,21 +213,22 @@ function getInitials(fullName?: string) {
 }
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
 ) =>
   StyleSheet.create({
     scrim: {
-      backgroundColor: "rgba(0,0,0,0.35)",
+      backgroundColor: "rgba(14,27,26,0.4)",
     },
     sidebar: {
       position: "absolute",
-      left: 0,
+      start: 0,
       top: 0,
       bottom: 0,
       width: SIDEBAR_WIDTH,
       backgroundColor: colors.background,
+      borderTopEndRadius: 32,
+      borderBottomEndRadius: 32,
+      overflow: "hidden",
     },
     sidebarInner: {
       flex: 1,
@@ -231,7 +236,12 @@ const createStyles = (
     },
     closeBtn: {
       alignSelf: "flex-end",
-      padding: 6,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.surface,
+      alignItems: "center",
+      justifyContent: "center",
       marginTop: 8,
     },
     profileBlock: {
@@ -239,9 +249,9 @@ const createStyles = (
       paddingVertical: 12,
     },
     avatar: {
-      width: 60,
-      height: 60,
-      borderRadius: 30,
+      width: 72,
+      height: 72,
+      borderRadius: 36,
       backgroundColor: colors.primary,
       alignItems: "center",
       justifyContent: "center",
@@ -253,9 +263,9 @@ const createStyles = (
       color: "#fff",
     },
     fullName: {
-      fontFamily: fonts.semiBold,
+      fontFamily: fonts.bold,
       fontSize: fontSize.md,
-      color: colors.text,
+      color: colors.ink,
       maxWidth: "100%",
     },
     email: {
@@ -267,8 +277,8 @@ const createStyles = (
     },
     divider: {
       height: StyleSheet.hairlineWidth,
-      backgroundColor: "#E1E1E3",
-      marginVertical: 10,
+      backgroundColor: colors.hairline,
+      marginVertical: 14,
     },
     menuList: {
       marginTop: 4,
@@ -276,13 +286,13 @@ const createStyles = (
     menuItem: {
       flexDirection: "row",
       alignItems: "center",
-      paddingVertical: 12,
+      paddingVertical: 10,
     },
     menuIconWrap: {
-      width: 32,
-      height: 32,
-      borderRadius: 10,
-      backgroundColor: "#F2F2F3",
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: colors.surface,
       alignItems: "center",
       justifyContent: "center",
       marginRight: 12,
@@ -292,9 +302,9 @@ const createStyles = (
     },
     menuLabel: {
       flex: 1,
-      fontFamily: fonts.medium ?? fonts.regular,
+      fontFamily: fonts.semiBold,
       fontSize: fontSize.sm,
-      color: colors.text,
+      color: colors.ink,
     },
     menuLabelDestructive: {
       color: "#DC2626",

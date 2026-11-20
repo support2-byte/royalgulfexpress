@@ -8,10 +8,18 @@
     "scheme": "consolidateapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "config": {
+        "googleMapsApiKey": "YOUR_GOOGLE_MAPS_SDK_KEY"
+      }
     },
     "android": {
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "config": {
+        "googleMaps": {
+          "apiKey": "YOUR_GOOGLE_MAPS_SDK_KEY"
+        }
+      }
     },
     "web": {
       "output": "static",
@@ -23,15 +31,16 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#FFFFFF",
-          "image": "./assets/images/logo-black.png",
-          "imageWidth": 350
+          "image": "./assets/images/logo.png",
+          "imageWidth": 400
         }
       ],
       "expo-image",
       "expo-font",
       "expo-secure-store",
       "@react-native-vector-icons/ionicons",
-      "expo-video"
+      "expo-video",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

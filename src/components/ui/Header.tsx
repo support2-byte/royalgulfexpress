@@ -1,20 +1,40 @@
+import { flipIcon, ls, tr } from "@/i18n";
 import { useAppContext } from "@/context/AppContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import Ionicons from "@react-native-vector-icons/ionicons";
-import { BlurView } from "expo-blur";
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, TouchableOpacity, View } from "react-native";
+import { Text } from "@/components/ui/Text";
+import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface HeaderProps {
   name: string;
   description: string;
   icon: string;
+  onBack?: () => void;
+  right?: React.ReactNode;
 }
 
-const Header: React.FC<HeaderProps> = ({ name, description, icon }) => {
+export const useSheetStyle = () => {
+  const { colors } = useAppTheme();
+  return {
+    flex: 1,
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    overflow: "hidden" as const,
+  };
+};
+
+const Header: React.FC<HeaderProps> = ({
+  name,
+  description,
+  icon,
+  onBack,
+  right,
+}) => {
   const { setOpenProfile } = useAppContext();
   const { colors, fontSize, fonts } = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -22,103 +42,99 @@ const Header: React.FC<HeaderProps> = ({ name, description, icon }) => {
 
   const isDashboard = name === "Dashboard";
 
-  const handleOpenMenu = () => {
-    if (isDashboard) setOpenProfile(true);
-  };
-
   return (
-    <LinearGradient
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      colors={[colors.primary, colors.lightPrimary]}
-      style={styles.header}
-    >
-      <View style={styles.row}>
-        {!isDashboard && (
+    <Animated.View entering={FadeIn.duration(350)} style={styles.header}>
+      <View style={styles.topRow}>
+        {!isDashboard ? (
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={onBack ?? (() => router.back())}
             hitSlop={10}
-            style={styles.backBtn}
+            activeOpacity={0.8}
+            style={styles.roundBtn}
           >
-            <Ionicons name="chevron-back" size={22} color={colors.background} />
+            <Ionicons name={flipIcon("chevron-back") as any} size={22} color={colors.ink} />
           </TouchableOpacity>
+        ) : (
+          <View />
         )}
 
-        <View style={styles.textBlock}>
-          <Text style={styles.title}>{name}</Text>
-          {!!description && (
-            <Text style={styles.text} numberOfLines={1}>
-              {description}
-            </Text>
-          )}
-        </View>
+        {right ?? (
+          <TouchableOpacity
+            onPress={() => isDashboard && setOpenProfile(true)}
+            activeOpacity={0.8}
+            disabled={!isDashboard}
+            style={styles.iconBadge}
+          >
+            <Ionicons name={icon as any} color="#fff" size={19} />
+          </TouchableOpacity>
+        )}
       </View>
 
-      <TouchableOpacity
-        onPress={handleOpenMenu}
-        activeOpacity={0.8}
-        disabled={!isDashboard}
-      >
-        <BlurView intensity={35} tint="light" style={styles.iconCard}>
-          <Ionicons name={icon as any} color={colors.background} size={20} />
-        </BlurView>
-      </TouchableOpacity>
-    </LinearGradient>
+      <Animated.View entering={FadeInDown.duration(380).delay(60)}>
+        <Text style={styles.title} numberOfLines={1}>
+          {name}
+        </Text>
+        {!!description && (
+          <Text style={styles.text} numberOfLines={2}>
+            {description}
+          </Text>
+        )}
+      </Animated.View>
+    </Animated.View>
   );
 };
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
   topInset: number,
 ) =>
   StyleSheet.create({
     header: {
-      paddingTop: topInset,
+      paddingTop: topInset + 10,
       paddingHorizontal: 20,
-      paddingBottom: 20,
+      paddingBottom: 22,
+      backgroundColor: colors.surface,
+    },
+    topRow: {
       flexDirection: "row",
+      alignItems: "center",
       justifyContent: "space-between",
-      alignItems: "center",
-      borderBottomLeftRadius: 24,
-      borderBottomRightRadius: 24,
+      marginBottom: 18,
     },
-    row: {
-      flexDirection: "row",
-      alignItems: "center",
-      flexShrink: 1,
-    },
-    backBtn: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
+    roundBtn: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: "#fff",
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: "rgba(255,255,255,0.18)",
-      marginRight: 12,
+      shadowColor: colors.primaryDeep,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.08,
+      shadowRadius: 10,
+      elevation: 3,
     },
-    textBlock: { flexShrink: 1 },
+    iconBadge: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     title: {
-      fontSize: fontSize.xl,
+      fontSize: 30,
+      lineHeight: 36,
       fontFamily: fonts.bold,
-      color: colors.background,
-      letterSpacing: -0.3,
+      color: colors.ink,
+      letterSpacing: ls(-0.8),
     },
     text: {
-      maxWidth: 240,
       fontSize: fontSize.sm,
       fontFamily: fonts.medium,
-      color: "rgba(255,255,255,0.85)",
-      marginTop: 2,
-    },
-    iconCard: {
-      width: 38,
-      height: 38,
-      borderRadius: 12,
-      alignItems: "center",
-      justifyContent: "center",
-      overflow: "hidden",
+      color: colors.textSecondary,
+      marginTop: 4,
+      lineHeight: 19,
     },
   });
 

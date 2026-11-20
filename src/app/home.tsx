@@ -1,78 +1,72 @@
 import { api } from "@/api";
-import { EmptyState } from "@/components/Home/EmptyState";
-import { QuickAction } from "@/components/Home/QuickAction";
-import { RecentInvoiceCard } from "@/components/Home/RecentInvoice";
-import { RecentShipmentCard } from "@/components/Home/RecentShipment";
+import TypewriterHeadline from "@/components/ui/TypewriterHeadline";
+import { fetchCustomerInvoices, isPaidStatus } from "@/lib/invoiceApi";
+import { orderStatusOf, type OrderGroup } from "@/lib/shipmentApi";
+import { tr } from "@/i18n";
+import { AlertsTab } from "@/components/Home/AlertsTab";
+import { InvoicesTab } from "@/components/Home/InvoicesTab";
+import { OverviewTab } from "@/components/Home/OverviewTab";
+import { ServicesTab } from "@/components/Home/ServicesTab";
+import { ShipmentsTab } from "@/components/Home/ShipmentsTab";
+import TrackingSearchCard from "@/components/Home/TrackingCard";
+import WheelTabs, { WheelTabItem } from "@/components/Home/WheelTabs";
 import HomeHeader from "@/components/ui/HomeHeader";
 import ProfileSidebar from "@/components/ui/ProfileSidebar";
 import { useAppContext } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { DashboardData, HomeTabKey, RecentOrder } from "@/types/home";
 import { Ionicons } from "@react-native-vector-icons/ionicons";
-import { router } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { Text } from "@/components/ui/Text";
+import Animated, {
+  FadeIn,
+  FadeInLeft,
+  FadeInRight,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import LatestShipmentCard from "@/components/Home/LatestShipmentCard";
-import TrackingSearchCard from "@/components/Home/TrackingCard";
-import AlertsIcon from "@assets/icons/alert.png";
-import DeliveryOptionsIcon from "@assets/icons/delivery.png";
-import GatepassIcon from "@assets/icons/gatepass.png";
-import InvoicesIcon from "@assets/icons/invoice.png";
-import ShipmentsIcon from "@assets/icons/shipments.png";
-import StorageIcon from "@assets/icons/storage.png";
-import SupportIcon from "@assets/icons/support.png";
-import TrackingIcon from "@assets/icons/tracking.png";
+const TAB_ITEMS: (WheelTabItem & { key: HomeTabKey })[] = [
+  { key: "shipments", label: "Shipments", icon: "boat-outline", motion: "rock" },
+  { key: "invoices", label: "Invoices", icon: "receipt-outline", motion: "bounce" },
+  { key: "overview", label: "Overview", icon: "grid-outline", motion: "spin" },
+  { key: "services", label: "Services", icon: "apps-outline", motion: "pop" },
+  { key: "alerts", label: "Alerts", icon: "notifications-outline", motion: "ring" },
+];
 
-interface RecentOrder {
-  order_id: number | string;
-  rgl_booking_number: string;
-  place_of_loading: string | number;
-  place_of_destination: string | number;
-  loading_place_name: string;
-  destination_place_name: string;
-  eta: string | null;
-  status: string;
-  created_at: string;
-  item_ref?: string;
-}
-
-interface RecentInvoice {
-  id: number;
-  invoice_id: string;
-  created_at: string;
-  due_at: string | null;
-  status: "paid" | "unpaid" | string;
-  amount: number;
-}
-
-interface DashboardData {
-  total_orders: number;
-  total_invoices: number;
-  recent_orders: RecentOrder[];
-  recent_invoices: RecentInvoice[];
-}
+const fromOrderGroup = (o: OrderGroup): RecentOrder => ({
+  order_id: o.order_id,
+  rgl_booking_number: o.booking_number,
+  place_of_loading: o.pol,
+  place_of_destination: o.pod,
+  loading_place_name: o.pol,
+  destination_place_name: o.pod,
+  eta: o.items.find((i) => i.eta)?.eta ?? null,
+  status: orderStatusOf(o),
+  created_at: o.created_at,
+  item_tracking_id: o.items[0]?.tracking_id ?? undefined,
+});
 
 const Home = () => {
   const { user } = useAuth();
-  const { openProfile, setOpenProfile } = useAppContext();
+  const {
+    openProfile,
+    setOpenProfile,
+    unreadNotificationCount,
+    orders: accountOrders,
+  } = useAppContext();
   const { colors, fontSize, fonts } = useAppTheme();
-  const styles = createStyles(colors, fontSize, fonts);
+  const { height: screenHeight } = useWindowDimensions();
+  const styles = createStyles(colors, fontSize, fonts, screenHeight);
 
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [tab, setTab] = useState<HomeTabKey>("overview");
+  const directionRef = useRef(1);
 
   const customerId = user?.customer_id;
 
@@ -92,35 +86,60 @@ const Home = () => {
         }
         setError(null);
 
-        const response = await api.get(`/dashboard/${customerId}`);
+        // The invoice list is fetched with the same call the Invoices screen
+        // uses, so the counts here always agree with that screen.
+        const [dashRes, invoiceRes] = await Promise.allSettled([
+          api.get(`/dashboard/${customerId}`),
+          fetchCustomerInvoices(customerId),
+        ]);
 
-        const payload = response?.data?.data ?? null;
+        const dashFailed =
+          dashRes.status === "rejected" &&
+          dashRes.reason?.response?.status !== 404;
+
+        if (dashFailed && invoiceRes.status === "rejected") {
+          throw (dashRes as PromiseRejectedResult).reason;
+        }
+
+        const payload =
+          dashRes.status === "fulfilled"
+            ? (dashRes.value?.data?.data ?? null)
+            : null;
+
+        const dashInvoices = Array.isArray(payload?.recent_invoices)
+          ? payload.recent_invoices
+          : [];
+        const invoices =
+          invoiceRes.status === "fulfilled" && invoiceRes.value.length > 0
+            ? invoiceRes.value
+            : dashInvoices;
+        const unpaid = invoices.filter((i: any) => !isPaidStatus(i.status));
 
         setData({
           total_orders: Number(payload?.total_orders ?? 0),
-          total_invoices: Number(payload?.total_invoices ?? 0),
+          total_invoices: Math.max(
+            Number(payload?.total_invoices ?? 0),
+            invoices.length,
+          ),
           recent_orders: Array.isArray(payload?.recent_orders)
             ? payload.recent_orders
             : [],
-          recent_invoices: Array.isArray(payload?.recent_invoices)
-            ? payload.recent_invoices
-            : [],
+          recent_invoices: invoices,
+          unpaid_count: unpaid.length,
+          unpaid_total: unpaid.reduce(
+            (sum: number, i: any) => sum + (Number(i.amount) || 0),
+            0,
+          ),
         });
-      } catch (err: any) {
-        const status = err?.response?.status;
-        if (status === 404) {
-          setData({
-            total_orders: 0,
-            total_invoices: 0,
-            recent_orders: [],
-            recent_invoices: [],
-          });
-        } else {
-          setError(
-            err?.response?.data?.message ||
-              "Couldn't load your dashboard. Pull down to try again.",
-          );
+
+        if (dashFailed) {
+          setError("Couldn't load your dashboard. Pull down to try again.");
         }
+      } catch (err: any) {
+        setError(
+          err?.response?.data?.message ||
+            "Couldn't load your dashboard. Pull down to try again.",
+        );
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -137,17 +156,74 @@ const Home = () => {
     fetchDashboard(true);
   }, [fetchDashboard]);
 
-  const recentOrders = data?.recent_orders ?? [];
+  // The dashboard summary can lag behind; the account's own shipment list is
+  // the source of truth for what the customer actually has.
+  const dashboardOrders = data?.recent_orders ?? [];
+  const recentOrders =
+    dashboardOrders.length > 0
+      ? dashboardOrders
+      : accountOrders.map(fromOrderGroup);
   const recentInvoices = data?.recent_invoices ?? [];
+  const overviewData: DashboardData | null = data
+    ? {
+        ...data,
+        total_orders: Math.max(data.total_orders, accountOrders.length),
+      }
+    : null;
   const sortedOrders = [...recentOrders].sort(
     (a, b) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   );
-  const latestOrder = sortedOrders[0] ?? null;
+
+  const tabItems = useMemo<WheelTabItem[]>(
+    () =>
+      TAB_ITEMS.map((t) =>
+        t.key === "alerts" ? { ...t, badge: unreadNotificationCount > 0 } : t,
+      ),
+    [unreadNotificationCount],
+  );
+
+  const changeTab = useCallback((next: string) => {
+    setTab((prev: any) => {
+      const from = TAB_ITEMS.findIndex((t) => t.key === prev);
+      const to = TAB_ITEMS.findIndex((t) => t.key === next);
+      directionRef.current = to >= from ? 1 : -1;
+      return next as HomeTabKey;
+    });
+  }, []);
+
+  const SheetEnter =
+    directionRef.current >= 0
+      ? FadeInRight.duration(280)
+      : FadeInLeft.duration(280);
+
+  const renderTab = () => {
+    switch (tab) {
+      case "shipments":
+        return <ShipmentsTab orders={sortedOrders} />;
+      case "invoices":
+        return <InvoicesTab invoices={recentInvoices} />;
+      case "services":
+        return <ServicesTab />;
+      case "alerts":
+        return <AlertsTab />;
+      default:
+        return (
+          <OverviewTab
+            data={overviewData}
+            orders={sortedOrders}
+            onSeeShipments={() => changeTab("shipments")}
+          />
+        );
+    }
+  };
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView
+        style={styles.container}
+        edges={["left", "right", "bottom"]}
+      >
         <HomeHeader />
         <View style={styles.centerFill}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -157,12 +233,13 @@ const Home = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <HomeHeader />
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.bodyContainer}
+        stickyHeaderIndices={[1]}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -171,134 +248,27 @@ const Home = () => {
           />
         }
       >
-        {error && (
-          <Animated.View
-            entering={FadeInDown.duration(400).delay(100)}
-            style={styles.errorCard}
-          >
-            <Ionicons name="alert-circle-outline" size={18} color="#B4690E" />
-            <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity onPress={() => fetchDashboard()} hitSlop={8}>
-              <Text style={styles.retryText}>Retry</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        )}
-
-        <Animated.View entering={FadeInDown.duration(400).delay(80)}>
+        <Animated.View entering={FadeIn.duration(500)} style={styles.hero}>
+          {error && (
+            <View style={styles.errorRow}>
+              <Ionicons name="alert-circle-outline" size={18} color="#B4690E" />
+              <Text style={styles.errorText}>{error}</Text>
+              <TouchableOpacity onPress={() => fetchDashboard()} hitSlop={8}>
+                <Text style={styles.retryText}>{tr("Retry")}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          <TypewriterHeadline />
           <TrackingSearchCard />
         </Animated.View>
 
-        {latestOrder && (
-          <Animated.View entering={FadeInDown.duration(450).delay(120)}>
-            <LatestShipmentCard order={latestOrder} />
+        <WheelTabs items={tabItems} activeKey={tab} onChange={changeTab} />
+
+        <View style={styles.sheet}>
+          <Animated.View key={tab} entering={SheetEnter}>
+            {renderTab()}
           </Animated.View>
-        )}
-
-        <Animated.View entering={FadeInDown.duration(400).delay(200)}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-        </Animated.View>
-
-        <Animated.View
-          entering={FadeInDown.duration(400).delay(240)}
-          style={styles.quickActionsRow}
-        >
-          <QuickAction
-            icon={ShipmentsIcon}
-            label="Shipments"
-            onPress={() => router.navigate("/shipments")}
-          />
-          <QuickAction
-            icon={TrackingIcon}
-            label="Tracking"
-            onPress={() => router.navigate("/tracking")}
-          />
-          <QuickAction
-            icon={DeliveryOptionsIcon}
-            label="Delivery Options"
-            onPress={() => router.navigate("/delivery-options")}
-          />
-          <QuickAction
-            icon={StorageIcon}
-            label="Storage"
-            onPress={() => router.navigate("/purchase-storage")}
-          />
-        </Animated.View>
-
-        <Animated.View
-          entering={FadeInDown.duration(400).delay(280)}
-          style={styles.quickActionsRow}
-        >
-          <QuickAction
-            icon={GatepassIcon}
-            label="Gatepass History"
-            onPress={() => router.navigate("/gatepass-history")}
-          />
-          <QuickAction
-            icon={InvoicesIcon}
-            label="Invoices"
-            onPress={() => router.navigate("/invoices")}
-          />
-          <QuickAction
-            icon={AlertsIcon}
-            label="Alerts"
-            onPress={() => router.navigate("/alerts")}
-          />
-          <QuickAction
-            icon={SupportIcon}
-            label="Support"
-            onPress={() => router.navigate("/support")}
-          />
-        </Animated.View>
-
-        <Animated.View
-          entering={FadeInDown.duration(400).delay(320)}
-          style={styles.sectionHeaderRow}
-        >
-          <Text style={styles.sectionTitle}>Recent Shipments</Text>
-          <TouchableOpacity
-            onPress={() => router.navigate("/shipments")}
-            hitSlop={8}
-          >
-            <Text style={styles.seeAllText}>See All</Text>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {sortedOrders.length === 0 ? (
-          <EmptyState label="No recent shipments yet." />
-        ) : (
-          sortedOrders.map((order, index) => (
-            <RecentShipmentCard
-              key={`${order.rgl_booking_number}-${index}`}
-              order={order}
-              index={index}
-            />
-          ))
-        )}
-
-        <Animated.View
-          entering={FadeInDown.duration(400).delay(360)}
-          style={styles.sectionHeaderRow}
-        >
-          <Text style={styles.sectionTitle}>Recent Invoices</Text>
-          <TouchableOpacity
-            onPress={() => router.navigate("/invoices")}
-            hitSlop={8}
-          >
-            <Text style={styles.seeAllText}>See All</Text>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {recentInvoices.length === 0 ? (
-          <EmptyState label="No recent invoices yet." />
-        ) : (
-          recentInvoices.map((invoice, index) => (
-            <RecentInvoiceCard
-              key={invoice.id ?? index}
-              invoice={invoice}
-              index={index}
-            />
-          ))
-        )}
+        </View>
       </ScrollView>
 
       <ProfileSidebar
@@ -310,35 +280,30 @@ const Home = () => {
 };
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
+  screenHeight: number,
 ) =>
   StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: colors.background,
+      backgroundColor: colors.surface,
     },
     centerFill: {
       flex: 1,
       alignItems: "center",
       justifyContent: "center",
     },
-    bodyContainer: {
-      padding: 20,
+    hero: {
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      paddingBottom: 18,
+      backgroundColor: colors.surface,
     },
-    errorCard: {
+    errorRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: 8,
-      marginTop: 15,
-      marginBottom: 10,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      backgroundColor: "#FFF3E0",
-      borderRadius: 12,
-      borderLeftWidth: 4,
-      borderColor: "#B4690E",
+      marginBottom: 14,
     },
     errorText: {
       flex: 1,
@@ -352,82 +317,13 @@ const createStyles = (
       color: "#B4690E",
       textDecorationLine: "underline",
     },
-    sectionTitle: {
-      fontSize: fontSize.md,
-      fontFamily: fonts.bold,
-      color: colors.text,
-      marginTop: 24,
-      marginBottom: 12,
-    },
-    sectionHeaderRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginTop: 10,
-    },
-    seeAllText: {
-      fontSize: fontSize.sm,
-      fontFamily: fonts.semiBold,
-      color: "#f58220",
-    },
-    quickActionsRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "flex-start",
-      marginTop: 4,
-    },
-    shipmentHero: {
-      padding: 20,
-      borderRadius: 20,
-      marginTop: 16,
-      marginBottom: 8,
-    },
-    heroLabel: {
-      fontSize: fontSize.xs,
-      color: colors.background,
-      fontFamily: fonts.semiBold,
-      opacity: 0.85,
-      marginBottom: 6,
-    },
-    heroTopRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 4,
-    },
-    heroBookingId: {
-      fontSize: fontSize.lg,
-      color: "#f58220",
-      fontFamily: fonts.bold,
-    },
-    heroStatusPill: {
-      paddingHorizontal: 12,
-      paddingVertical: 5,
-      borderRadius: 20,
-      backgroundColor: "#f58220",
-    },
-    heroStatusText: {
-      fontSize: fontSize.xs,
-      color: colors.background,
-      fontFamily: fonts.semiBold,
-    },
-    heroRoute: {
-      fontSize: fontSize.sm,
-      color: colors.background,
-      fontFamily: fonts.regular,
-      opacity: 0.9,
-      marginTop: 2,
-    },
-    heroBottomRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginTop: 2,
-    },
-    heroEta: {
-      fontSize: fontSize.sm,
-      color: colors.background,
-      fontFamily: fonts.semiBold,
+    sheet: {
+      backgroundColor: colors.background,
+      paddingHorizontal: 20,
+      paddingTop: 24,
+      paddingBottom: 48,
+      minHeight: screenHeight * 0.62,
+      overflow: "hidden",
     },
   });
 

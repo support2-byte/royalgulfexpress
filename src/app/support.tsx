@@ -1,4 +1,5 @@
-import Header from "@/components/ui/Header";
+import { tr } from "@/i18n";
+import Header, { useSheetStyle } from "@/components/ui/Header";
 import { useAppContext } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/hooks/useAppTheme";
@@ -6,21 +7,16 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import moment from "moment";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import {
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { FlatList, KeyboardAvoidingView, Platform, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Text, TextInput } from "@/components/ui/Text";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function Support() {
   const { colors, fontSize, fonts } = useAppTheme();
   const styles = createStyles(colors, fontSize, fonts);
+  const sheet = useSheetStyle();
+  const [headerH, setHeaderH] = useState(0);
 
   const { chatMessages, chatStatus, sendChatMessage } = useAppContext();
   const { user } = useAuth();
@@ -59,7 +55,8 @@ export default function Support() {
 
     const isUser = item.sender_type === user.type;
     return (
-      <View
+      <Animated.View
+        entering={FadeInDown.duration(260)}
         style={[
           styles.messageRow,
           isUser
@@ -87,36 +84,38 @@ export default function Support() {
             {moment(item.created_at).format("h:mm A")}
           </Text>
         </View>
-      </View>
+      </Animated.View>
     );
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <Header name="Support" description="Live Chat" icon="chatbubbles" />
-
-      {chatStatus === "closed" && (
-        <View
-          style={{ paddingVertical: 6, backgroundColor: colors.background }}
-        >
-          <Text
-            style={{
-              textAlign: "center",
-              fontSize: fontSize.xs,
-              color: colors.textSecondary,
-            }}
-          >
-            This chat was closed. Sending a message will start a new
-            conversation.
-          </Text>
-        </View>
-      )}
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
+      <View onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}>
+        <Header
+          name="Support"
+          description={tr("Chat with our team in real time")}
+          icon="chatbubbles"
+        />
+      </View>
 
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={sheet}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+        keyboardVerticalOffset={Platform.OS === "ios" ? headerH : 0}
       >
+        {chatStatus === "closed" && (
+          <View style={styles.closedBanner}>
+            <Ionicons
+              name="information-circle-outline"
+              size={16}
+              color={colors.textSecondary}
+            />
+            <Text style={styles.closedText}>
+              {tr("This chat was closed. Sending a message starts a new conversation.")}
+            </Text>
+          </View>
+        )}
+
         <FlatList
           ref={listRef}
           data={chatMessages}
@@ -132,19 +131,19 @@ export default function Support() {
         <View style={styles.inputBar}>
           <TextInput
             style={styles.input}
-            placeholder="Type your message..."
-            placeholderTextColor={colors.textSecondary}
+            placeholder={tr("Write a message")}
+            placeholderTextColor={colors.lightText}
             value={inputText}
             onChangeText={setInputText}
             multiline
           />
           <TouchableOpacity
-            style={[styles.sendBtn, !inputText.trim() && { opacity: 0.5 }]}
+            style={[styles.sendBtn, !inputText.trim() && styles.sendBtnIdle]}
             onPress={handleSend}
             disabled={!inputText.trim() || sending}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
-            <Ionicons name="arrow-forward" size={20} color="#fff" />
+            <Ionicons name="arrow-up" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -153,17 +152,33 @@ export default function Support() {
 }
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
 ) =>
   StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: colors.background,
+      backgroundColor: colors.surface,
+    },
+    closedBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      marginHorizontal: 20,
+      marginTop: 18,
+      paddingBottom: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    closedText: {
+      flex: 1,
+      fontFamily: fonts.regular,
+      fontSize: fontSize.xs,
+      color: colors.textSecondary,
     },
     listContent: {
-      padding: 16,
+      paddingHorizontal: 20,
+      paddingTop: 24,
+      paddingBottom: 12,
       gap: 14,
     },
     messageRow: {
@@ -171,84 +186,83 @@ const createStyles = (
       width: "100%",
     },
     bubble: {
-      borderRadius: 16,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
+      borderRadius: 20,
+      paddingHorizontal: 16,
+      paddingVertical: 11,
     },
     userBubble: {
       backgroundColor: colors.primary,
-      borderBottomRightRadius: 4,
+      borderBottomRightRadius: 6,
     },
     supportBubble: {
-      backgroundColor: colors.background,
-      borderBottomLeftRadius: 4,
-      borderWidth: 1,
-      borderColor: colors.borderColor,
+      backgroundColor: colors.surface,
+      borderBottomLeftRadius: 6,
     },
     userText: {
-      fontFamily: fonts.regular,
+      fontFamily: fonts.medium,
       fontSize: fontSize.sm,
       color: "#fff",
-      lineHeight: fontSize.sm * 1.4,
+      lineHeight: fontSize.sm * 1.45,
     },
     supportText: {
-      fontFamily: fonts.regular,
+      fontFamily: fonts.medium,
       fontSize: fontSize.sm,
-      color: colors.textSecondary,
-      lineHeight: fontSize.sm * 1.4,
+      color: colors.ink,
+      lineHeight: fontSize.sm * 1.45,
     },
     timeText: {
       fontFamily: fonts.regular,
       fontSize: fontSize.xs,
-      color: colors.textSecondary,
+      color: colors.lightText,
       marginTop: 4,
-      marginHorizontal: 4,
+      marginHorizontal: 6,
     },
     inputBar: {
       flexDirection: "row",
       alignItems: "flex-end",
       gap: 10,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      borderTopWidth: 1,
-      borderColor: colors.borderColor,
-      backgroundColor: colors.background,
+      marginHorizontal: 16,
+      marginBottom: 14,
+      paddingLeft: 18,
+      paddingRight: 6,
+      paddingVertical: 6,
+      borderRadius: 28,
+      backgroundColor: colors.surface,
     },
     input: {
       flex: 1,
-      fontFamily: fonts.regular,
+      fontFamily: fonts.medium,
       fontSize: fontSize.sm,
-      color: colors.secondary,
-      backgroundColor: colors.background,
-      borderRadius: 20,
-      paddingHorizontal: 16,
-      paddingVertical: 10,
+      color: colors.ink,
       maxHeight: 100,
-      borderWidth: 1,
-      borderColor: colors.borderColor,
+      paddingTop: 11,
+      paddingBottom: 11,
     },
     sendBtn: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: colors.primary,
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: colors.secondary,
       alignItems: "center",
       justifyContent: "center",
+    },
+    sendBtnIdle: {
+      backgroundColor: colors.dome,
     },
     systemRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 8,
-      marginVertical: 4,
+      gap: 10,
+      marginVertical: 6,
     },
     systemDivider: {
       flex: 1,
-      height: 1,
+      height: StyleSheet.hairlineWidth,
       backgroundColor: colors.borderColor,
     },
     systemText: {
       fontFamily: fonts.regular,
       fontSize: fontSize.xs,
-      color: colors.textSecondary,
+      color: colors.lightText,
     },
   });

@@ -2,11 +2,15 @@ import { createStyles } from "@/app/tracking";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { useState } from "react";
-import { FlatList, Modal, Text, TouchableOpacity, View } from "react-native";
+import BottomSheet from "@/components/ui/BottomSheet";
+import { flipIcon, tr } from "@/i18n";
+import { FlatList, TouchableOpacity, View } from "react-native";
+import { Text } from "@/components/ui/Text";
 
 interface OrderItemOption {
   order_item_id: number;
-  item_ref: string;
+  tracking_id: string | null;
+  label: string;
 }
 
 interface OrderOption {
@@ -18,7 +22,7 @@ interface OrderOption {
 interface Props {
   orderOptions: OrderOption[];
   selectedOrder: OrderOption | undefined;
-  selectedItemRef: string | null;
+  selectedItemLabel: string | null;
   onSelectOrder: (order: OrderOption) => void;
   onSelectItem: (item: OrderItemOption) => void;
   styles: ReturnType<typeof createStyles>;
@@ -27,7 +31,7 @@ interface Props {
 export default function Picker({
   orderOptions,
   selectedOrder,
-  selectedItemRef,
+  selectedItemLabel,
   onSelectOrder,
   onSelectItem,
   styles,
@@ -43,7 +47,7 @@ export default function Picker({
           style={styles.pickerField}
           onPress={() => setOrderPickerOpen(true)}
         >
-          <Text style={styles.pickerLabel}>Order</Text>
+          <Text style={styles.pickerLabel}>{tr("Order")}</Text>
           <View style={styles.pickerValueRow}>
             <Text style={styles.pickerValue} numberOfLines={1}>
               {selectedOrder?.booking_number ?? "Select order"}
@@ -64,10 +68,10 @@ export default function Picker({
           disabled={!selectedOrder}
           onPress={() => setItemPickerOpen(true)}
         >
-          <Text style={styles.pickerLabel}>Item</Text>
+          <Text style={styles.pickerLabel}>{tr("Item")}</Text>
           <View style={styles.pickerValueRow}>
             <Text style={styles.pickerValue} numberOfLines={1}>
-              {selectedItemRef ?? "Select item"}
+              {selectedItemLabel ?? "Select item"}
             </Text>
             <Ionicons
               name="chevron-down"
@@ -80,7 +84,7 @@ export default function Picker({
 
       <PickerModal
         visible={orderPickerOpen}
-        title="Select Order"
+        title={tr("Select Order")}
         onClose={() => setOrderPickerOpen(false)}
         data={orderOptions}
         keyExtractor={(o: OrderOption) => String(o.order_id)}
@@ -94,11 +98,11 @@ export default function Picker({
 
       <PickerModal
         visible={itemPickerOpen}
-        title="Select Item"
+        title={tr("Select Item")}
         onClose={() => setItemPickerOpen(false)}
         data={selectedOrder?.items ?? []}
         keyExtractor={(i: OrderItemOption) => String(i.order_item_id)}
-        renderLabel={(i: OrderItemOption) => i.item_ref}
+        renderLabel={(i: OrderItemOption) => i.label}
         onSelect={(i: OrderItemOption) => {
           onSelectItem(i);
           setItemPickerOpen(false);
@@ -129,41 +133,26 @@ function PickerModal<T>({
   styles: ReturnType<typeof createStyles>;
 }) {
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <TouchableOpacity
-        style={styles.modalOverlay}
-        activeOpacity={1}
-        onPress={onClose}
-      >
-        <View style={styles.modalSheet}>
-          <View style={styles.modalHandle} />
-          <Text style={styles.modalTitle}>{title}</Text>
-          <FlatList
-            data={data}
-            keyExtractor={keyExtractor}
-            ItemSeparatorComponent={() => (
-              <View style={styles.modalSeparator} />
-            )}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.modalRow}
-                onPress={() => onSelect(item)}
-              >
-                <Text style={styles.modalRowText}>{renderLabel(item)}</Text>
-                <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={
-              <Text style={styles.emptyText}>No options available</Text>
-            }
-          />
-        </View>
-      </TouchableOpacity>
-    </Modal>
+    <BottomSheet visible={visible} title={title} onClose={onClose}>
+      <FlatList
+        data={data}
+        keyExtractor={keyExtractor}
+        showsVerticalScrollIndicator={false}
+        ItemSeparatorComponent={() => <View style={styles.modalSeparator} />}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.modalRow}
+            activeOpacity={0.6}
+            onPress={() => onSelect(item)}
+          >
+            <Text style={styles.modalRowText}>{renderLabel(item)}</Text>
+            <Ionicons name={flipIcon("chevron-forward") as any} size={16} color="#94A3B8" />
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={
+          <Text style={styles.emptyText}>{tr("No options available")}</Text>
+        }
+      />
+    </BottomSheet>
   );
 }

@@ -1,68 +1,93 @@
+import { flipIcon, tr } from "@/i18n";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import Ionicons from "@react-native-vector-icons/ionicons";
 import React from "react";
-import {
-  Image,
-  ImageSourcePropType,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Image, ImageSourcePropType, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Text } from "@/components/ui/Text";
+import Animated, { FadeInDown } from "react-native-reanimated";
 
 interface QuickActionProps {
   icon: ImageSourcePropType;
   label: string;
+  description?: string;
+  index?: number;
   onPress?: () => void;
 }
 
 export const QuickAction: React.FC<QuickActionProps> = ({
   icon,
   label,
+  description,
+  index = 0,
   onPress,
 }) => {
   const { colors, fontSize, fonts } = useAppTheme();
   const styles = createStyles(colors, fontSize, fonts);
 
   return (
-    <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={onPress}>
-      <View style={styles.iconWrap}>
-        <Image source={icon} style={styles.icon} resizeMode="contain" />
-      </View>
-      <Text style={styles.text} numberOfLines={1}>
-        {label}
-      </Text>
-    </TouchableOpacity>
+    <Animated.View
+      entering={FadeInDown.duration(320).delay(Math.min(index, 6) * 45)}
+    >
+      <TouchableOpacity
+        style={styles.row}
+        activeOpacity={0.6}
+        onPress={onPress}
+      >
+        <View style={styles.iconWrap}>
+          <Image source={icon} style={styles.icon} resizeMode="contain" />
+        </View>
+        <View style={styles.textBlock}>
+          <Text style={styles.label} numberOfLines={1}>
+            {label}
+          </Text>
+          {description && (
+            <Text style={styles.description} numberOfLines={1}>
+              {description}
+            </Text>
+          )}
+        </View>
+        <Ionicons name={flipIcon("chevron-forward") as any} size={16} color={colors.lightText} />
+      </TouchableOpacity>
+    </Animated.View>
   );
 };
 
 const createStyles = (
-  colors: ReturnType<typeof useAppTheme>["colors"],
-  fontSize: ReturnType<typeof useAppTheme>["fontSize"],
-  fonts: ReturnType<typeof useAppTheme>["fonts"],
+  colors: ReturnType<typeof useAppTheme>["colors"], fontSize: ReturnType<typeof useAppTheme>["fontSize"], fonts: ReturnType<typeof useAppTheme>["fonts"],
 ) =>
   StyleSheet.create({
-    item: {
-      width: "23%",
+    row: {
+      flexDirection: "row",
       alignItems: "center",
-      marginBottom: 16,
+      paddingVertical: 14,
+      gap: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
     },
     iconWrap: {
-      width: 60,
-      height: 60,
-      borderRadius: 16,
-      backgroundColor: colors.lightGrey,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: colors.surface,
       alignItems: "center",
       justifyContent: "center",
     },
     icon: {
-      width: 28,
-      height: 28,
+      width: 24,
+      height: 24,
     },
-    text: {
-      textAlign: "center",
-      fontFamily: fonts.medium,
-      fontSize: fontSize.xs ?? 11,
+    textBlock: {
+      flex: 1,
+    },
+    label: {
+      fontFamily: fonts.semiBold,
+      fontSize: fontSize.md,
+      color: colors.ink,
+    },
+    description: {
+      fontFamily: fonts.regular,
+      fontSize: fontSize.xs,
       color: colors.textSecondary,
-      marginTop: 6,
+      marginTop: 2,
     },
   });
